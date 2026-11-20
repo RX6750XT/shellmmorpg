@@ -1366,7 +1366,10 @@ cli_srv() {  # typ fields...
   local typ=$1 a=$2 b=$3 c=$4 d=$5 e=$6 f=$7 g=$8 h=$9 x n old new q list=()
   case $typ in
     "AR$MY_ID") case $a in
-                  ACK) acct_acked ;;
+                  ACK)  acct_acked ;;
+                  AUTH) acct_nudged ;;                                  # v6.3: the server forgot us (it restarted)
+                  OK)   acct_back ;;
+                  DENY) if [[ $b == KICK ]]; then acct_kicked "$c"; else logm "The server refused the login: $c" "$K_HURT"; fi ;;
                   BAD) ACK_PEND=0; logm "The server did not accept your save: $b" "$K_HURT" ;;
                 esac ;;
     MON)  [[ $a == "$CUR_MAP" ]] && num "$b" && num "$c" && num "$d" && num "$e" && num "$f" && num "$g" || return
@@ -1374,8 +1377,13 @@ cli_srv() {  # typ fields...
           [[ ${SEEN:c:1} == 0 ]] && SEEN="${SEEN:0:c}1${SEEN:c+1}"
           cm_set "$b" "$c" "$d" "$e" "$f" "$g"; MAP_DIRTY=1
           CM_CH[$b]=0; [[ $h =~ ^[1-9][0-9]?$ ]] && (( h <= NCHP )) && CM_CH[$b]=$h ;;
-    MMOV) num "$b" && [[ $a == "$CUR_MAP" && -n ${CM_T[$b]} ]] && num "$c" && num "$d" || return
-          cm_move "$b" "$c" "$d"
+    MMOV) num "$b" && [[ $a == "$CUR_MAP" ]] && num "$c" && num "$d" || return
+          if [[ -z ${CM_T[$b]} ]]; then                      # v6.3: a monster we have not heard of (it walked into range)
+            num "$e" && num "$f" && num "$g" && (( e < NM )) || return
+            [[ ${SEEN:e:1} == 0 ]] && SEEN="${SEEN:0:e}1${SEEN:e+1}"
+            cm_set "$b" "$e" "$c" "$d" "$f" "$g"
+            CM_CH[$b]=0; [[ $h =~ ^[1-9][0-9]?$ ]] && (( h <= NCHP )) && CM_CH[$b]=$h
+          else cm_move "$b" "$c" "$d"; fi
           (( c - PX < VW / 2 + 2 && PX - c < VW / 2 + 2 && d - PY < VH / 2 + 2 && PY - d < VH / 2 + 2 )) && MAP_DIRTY=1 ;;
     MHP)  num "$b" && [[ $a == "$CUR_MAP" && -n ${CM_T[$b]} ]] && num "$c" || return
           CM_HP[$b]=$c ;;
@@ -1509,7 +1517,7 @@ cli_line() {
   fi
   IFS='|' read -r tag typ from a b c d e f g h i j k l q r <<< "$line"
   [[ $tag == SM1 && $from != "$MY_ID" ]] || return
-  if [[ $from == srv ]]; then cli_srv "$typ" "$a" "$b" "$c" "$d" "$e" "$f" "$g" "$h"; return; fi
+  if [[ $from == srv ]]; then LAST_SRV=$NOW; cli_srv "$typ" "$a" "$b" "$c" "$d" "$e" "$f" "$g" "$h"; return; fi
   [[ $from =~ ^[0-9a-f]{6}$ ]] || return
   nm=${a//[^A-Za-z0-9_-]/}; nm=${nm:0:12}; [[ -n $nm ]] || nm=anon
   case $typ in

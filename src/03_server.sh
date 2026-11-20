@@ -382,7 +382,7 @@ mon_step() {  # mid tx ty
     player_at "$map" "$nx" "$ny" && continue
     unset "OCC[$map:$x:$y]"; OCC["$map:$nx:$ny"]=$m
     MX[m]=$nx MY[m]=$ny
-    send MMOV srv "$map" "$m" "$nx" "$ny"
+    send MMOV srv "$map" "$m" "$nx" "$ny" "${MT[m]}" "${MHP[m]}" "${MMAX[m]}" $(( ${MCH[m]:--1} + 1 ))   # v6.3: full state (interest management)
     return 0
   done
   return 1
@@ -652,7 +652,7 @@ weather_second() {
 clock_second() {
   local gm=$(( (NOW - SRV_CLK0) % DAYLEN / GMIN ))
   NIGHT=$(( gm >= 1260 || gm < 300 ))
-  (( NOW >= ${CLK_NEXT:-0} )) && { CLK_NEXT=$(( NOW + 30000 )); send CLOCK srv $(( (NOW - SRV_CLK0) % DAYLEN )); }
+  (( NOW >= ${CLK_NEXT:-0} )) && { CLK_NEXT=$(( NOW + 10000 )); send CLOCK srv $(( (NOW - SRV_CLK0) % DAYLEN )); }
 }
 
 srv_invite() {  # from targetname
@@ -851,7 +851,7 @@ srv_line() {
     ASAVE) srv_asave "$from" "$a" "$b" "$c"; return ;;
   esac
   if (( ACCT_ON )); then                              # nobody plays without logging in, and only as the hero they logged in as
-    [[ -n ${ACC_NAME[$from]} ]] || return
+    [[ -n ${ACC_NAME[$from]} ]] || { acc_nudge "$from"; return; }
     ACC_SEEN[$from]=$NOW
     case $typ in HELLO|POS) [[ ${a//[^A-Za-z0-9_-]/} == "${ACC_NAME[$from]}" ]] || return ;; esac
   fi
@@ -903,7 +903,10 @@ server_main() {
   send ANN srv "World server online."
   while :; do
     if (( ! net_up )); then
-      sleep 1; net_connect && { slog "reconnected"; continue; }
+      if [[ $MODE == server ]] && ! alive "$HUB_PID"; then         # v6.3: the dedicated server brings its hub back
+        slog "the hub is gone - restarting it"; start_hub && slog "hub restarted"
+      fi
+      sleep 1; net_connect && { slog "reconnected"; tries=0; continue; }
       tries=$(( tries + 1 )); (( tries > 60 )) && exit 1
       continue
     fi

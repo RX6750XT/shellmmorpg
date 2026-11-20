@@ -34,7 +34,7 @@
 #  This file is built from src/*.sh and world.txt by build.sh - edit those.
 # ============================================================================
 
-VERSION="6.2"
+VERSION="6.3"
 DATA_DIR="${SHELLMMO_DIR:-$HOME/.shellmmorpg}"
 SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
 # string lengths must count characters, not bytes (emoji graphics): make sure we run in a UTF-8 locale

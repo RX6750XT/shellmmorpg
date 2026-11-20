@@ -1,5 +1,39 @@
 # Changelog
 
+## 6.3 - stability and smoother multiplayer
+
+**Multiplayer scales**
+- **Interest management** in the python3 hub: in the open world every
+  player gets only the monsters near them. Traffic per player stays at about
+  30 lines a second while walking, however many are online (before: 30 with
+  one player, 120 with eight). A player joining no longer floods everybody
+  with the whole world (~1100 monsters). Clients parse a quarter of the
+  lines and stay smooth in busy worlds.
+- `MMOV` carries the monster's full state, so a monster that walks into
+  range shows up at once; the hub hands you what is around you when you
+  walk or teleport somewhere. Old clients still work.
+
+**Stability**
+- Heartbeat: the world server sends the clock every 10 s; a client that
+  hears nothing for 35 s reconnects by itself instead of hanging in a dead
+  world.
+- When the host's world server dies, the host restarts it (and the hub);
+  every player logs in again by themselves (new `AUTH` nudge) and keeps
+  playing - nothing is lost, heroes are on disk. The log of the old server
+  is kept in `server.log`.
+- A dedicated server brings its hub back if the hub dies.
+- No more "Killed" messages from bash drawn over the game.
+- Logging in no longer fails when a client starts faster than the world
+  server.
+- **Quit and come straight back** works: logging in with the right password
+  takes the hero over (it used to say "already playing" for up to 8 s). An
+  older session of the same hero ends at once and does not save over the
+  new one; a reconnecting client never kicks anybody.
+- Quitting waits up to 4 s (was 2) for the server to confirm the last save.
+- New tests: `test_restart.py` (the world server dies under two players),
+  interest management in `test_net.py`, takeover in `test_acct.py` and
+  `test_login.py`; flaky checks in the tests fixed.
+
 ## 6.2 - heroes live on the server
 
 **Heroes are created and saved on the server only**

@@ -17,6 +17,7 @@ if [[ $1 != quick ]]; then
       SHELLMMO_HUB=$hub timeout 300 python3 tests/test_acct.py || fails=$(( fails + 1 ))
     done
     timeout 300 python3 tests/test_login.py || fails=$(( fails + 1 ))
+    timeout 300 python3 tests/test_restart.py || fails=$(( fails + 1 ))
   else
     echo "test_net       skipped (needs python3)"
   fi

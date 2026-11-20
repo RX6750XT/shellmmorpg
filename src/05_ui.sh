@@ -1101,6 +1101,22 @@ cleanup() {
   [[ -n $old_stty ]] && stty "$old_stty" 2>/dev/null
   printf '\e[0m\e[?7h\e[?25h\e[?1049l'
   [[ -n $CLS ]] && echo "shellmmorpg: $MY_NAME (level $LVL ${C_NAME[CLS]}) saved. See you in Hearthmoor!"
+  [[ -n $KICKED ]] && echo "shellmmorpg: $KICKED This session ended without saving."
+}
+
+srv_watch() {  # v6.3: the world server says something at least every 10 s (CLOCK) - silence means it is gone
+  if [[ $MODE == host ]] && [[ -n $WS_PID ]] && ! alive "$WS_PID"; then
+    logm "The world server stopped - restarting it (see $DATA_DIR/server.log)." "$K_HURT"
+    { echo "--- restarted $(date)"; } >> "$DATA_DIR/server.log" 2>/dev/null
+    alive "$HUB_PID" || start_hub
+    start_world_server; LAST_SRV=$NOW
+    return
+  fi
+  if (( net_up && NOW - ${LAST_SRV:-$NOW} > 35000 )); then
+    LAST_SRV=$NOW
+    logm "The world server is not answering - reconnecting..." "$K_HURT"
+    net_lost
+  fi
 }
 
 client_main() {
@@ -1112,6 +1128,7 @@ client_main() {
     pick_hub_tool || die "hosting needs ncat, python3 or socat (joining works with plain bash)"
     echo "Starting the world on port $NET_PORT (hub: $HUB_TOOL)..."
     start_hub || { stop_all; die "could not open port $NET_PORT - already in use? Try --port"; }
+    : > "$DATA_DIR/server.log" 2>/dev/null
     start_world_server
   fi
   echo "Connecting to $NET_HOST:$NET_PORT..."
@@ -1175,6 +1192,7 @@ client_main() {
         WANTED_UNTIL=0
         send HELLO "$MY_ID" "$MY_NAME" "$CLS" "$LVL"; send_pos; send SYNC "$MY_ID" W
         (( SAVE_LOST )) && save_char
+        LAST_SRV=$NOW
         logm "Reconnected to the world." "$K_GOOD"
       fi
     fi
@@ -1182,7 +1200,7 @@ client_main() {
     [[ -n $GATH_MID ]] && gather_tick
     (( FISH_ST )) && fish_tick
     (( ALLY >= 0 )) && aly_tick
-    if (( NOW >= next_sec )); then next_sec=$(( NOW + 1000 )); regen; fi
+    if (( NOW >= next_sec )); then next_sec=$(( NOW + 1000 )); regen; srv_watch; fi
     (( DEAD && NOW >= dead_until )) && respawn
     (( clear_until && NOW >= clear_until )) && { clear_until=0; leave_instance; }
     if (( net_up )) && { (( POS_DIRTY && NOW - last_pos >= 60 )) || (( NOW - last_pos >= 2000 )); }; then send_pos; fi

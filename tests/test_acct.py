@@ -80,8 +80,7 @@ def run(port):
     check('bob is new too', answer(b)[0] == 'NONE')
     b.send('HELLO', b.id, 'alice', 0, 1)
     b.send('POS', b.id, 'alice', 0, 1, 'W', 80, 34, 100, 100, 0, '@', 1, '', '', '')
-    b.lines.clear(); b.pump(1.5)
-    check('a hero cannot enter the world under another name (no world sync)', not any('|CLOCK|' in l or '|MON|' in l for l in b.lines))
+    b.pump(1.0)                                      # (checked in the server log at the end)
 
     # --- bad saves ----------------------------------------------------------------------------------------
     save(b, 'not a hero at all')
@@ -103,15 +102,21 @@ def run(port):
     check('the hero comes back: DATA', k == 'DATA')
     check('...exactly as saved (newlines, ;, 4000 extra characters)', txt is not None and txt.startswith(HERO) and txt.rstrip('\n').endswith('X' * 4000), repr((txt or '')[:60]))
 
-    # --- one session per hero --------------------------------------------------------------------------------
-    a3 = Bot(port, 'a3a3a3', 'Alice')
-    login(a3, 'sekret1')
-    check('a second login as the same hero is refused (ONLINE)', answer(a3)[0] == 'DENY')
-    a2.hello()
+    # --- one session per hero: the right password takes it over (v6.3) ------------------------------------
+    a2.hello(); time.sleep(0.8)
+    a3 = Bot(port, 'a3a3a3', 'alice')
+    login(a3, 'wrongpw')
+    check('a wrong password does not take a hero over', answer(a3)[0] == 'DENY' and answer(a2, 1)[0] is None)
+    time.sleep(0.8); login(a3, 'sekret1')
+    k, txt = load_text(a3)
+    check('the right password takes the hero over', k == 'DATA')
+    k, rest = answer(a2)
+    check('...and the old session is told (DENY KICK)', k == 'DENY' and rest.startswith('KICK'), f'({k} {rest})')
+    save(a2, HERO)
+    check('...and cannot save any more', answer(a2, 1.5)[0] in (None, 'AUTH'))
     a3b = Bot(port, 'a4a4a4', 'alice')
-    time.sleep(0.8)
-    login(a3b, 'sekret1')
-    check('...also while the first one is playing', answer(a3b)[0] == 'DENY')
+    login(a3b, 'sekret1', 'keep')
+    check('a reconnect ("keep") never kicks anybody', answer(a3b)[0] == 'DENY' and answer(a3, 1)[0] is None)
 
     # --- lock-out after five wrong passwords -----------------------------------------------------------------
     c = Bot(port, 'c0ffee', 'carol')
@@ -165,6 +170,7 @@ def main():
         import re
         errs = [l for l in out.splitlines() if re.search(r'line \d+:|syntax error|command not found|unbound', l)]
         check('server log has no bash errors', not errs, '\n    ' + '\n    '.join(errs[:5]))
+        check('a hero cannot enter the world under another name', '+ alice (abc123)' not in out and 'joined' in out)
         check('no password in the server log', 'sekret1' not in out and 'carolpw' not in out)
         shutil.rmtree(data, ignore_errors=True)
     print(f'{"test_acct/" + T.HUB:<14} {T.PASS:4d} passed  {T.FAIL} failed')

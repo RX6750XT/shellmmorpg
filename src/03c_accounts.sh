@@ -48,6 +48,24 @@ acc_online() {  # name id -> 0 if somebody else is logged in as that name right 
   return 1
 }
 
+declare -A ACC_NUDGE=()
+acc_nudge() {  # a player we do not know (the server restarted, or the session timed out): please log in again
+  (( NOW - ${ACC_NUDGE[$1]:-0} >= 5000 )) || return
+  ACC_NUDGE[$1]=$NOW
+  (( ${#ACC_NUDGE[@]} > 500 )) && ACC_NUDGE=()
+  acc_reply "$1" AUTH
+}
+
+acc_kick() {  # name new-id: end every other session of that hero
+  local i
+  for i in "${!ACC_NAME[@]}"; do
+    [[ $i != "$2" && ${ACC_NAME[$i],,} == "${1,,}" ]] || continue
+    acc_reply "$i" DENY KICK "$1 logged in somewhere else."
+    slog "! $1 ($i) taken over by $2"
+    srv_drop "$i"; acc_forget "$i"
+  done
+}
+
 acc_forget() { unset "ACC_NAME[$1]" "ACC_NEW[$1]" "ACC_PASS[$1]" "ACC_BUF[$1]" "ACC_NS[$1]" "ACC_SEEN[$1]" "ACC_RATE[$1]" "ACC_SVN[$1]" "ACC_SVT[$1]"; }
 
 srv_aload() {  # id name password [keep]
@@ -58,7 +76,7 @@ srv_aload() {  # id name password [keep]
   (( NOW - ${ACC_RATE[$id]:-0} >= 700 )) || { acc_reply "$id" DENY LOCK "Slow down."; return; }
   ACC_RATE[$id]=$NOW
   (( NOW >= ${ACC_LOCK[$key]:-0} )) || { acc_reply "$id" DENY LOCK "Too many wrong passwords - try again in a minute."; return; }
-  if acc_online "$name" "$id"; then acc_reply "$id" DENY ONLINE "$name is already playing (a crashed session times out after 8 seconds)."; return; fi
+  if [[ ! -r $ACC_DIR/$key.pw ]] && acc_online "$name" "$id"; then acc_reply "$id" DENY ONLINE "Somebody is creating $name right now."; return; fi
   ACC_SEEN[$id]=$NOW
   if [[ -r $ACC_DIR/$key.pw ]]; then
     read -r salt hsh nm < "$ACC_DIR/$key.pw"
@@ -70,6 +88,12 @@ srv_aload() {  # id name password [keep]
     fi
     ACC_FAIL[$key]=0
     [[ $nm == "$name" ]] || { acc_reply "$id" DENY NAME "That hero is called $nm."; return; }
+    if acc_online "$name" "$id"; then                # v6.3: the right password takes the hero over (quit and came straight back,
+      if [[ $keep == keep ]]; then                    # or a session hanging somewhere) - but a reconnect never kicks anybody
+        acc_reply "$id" DENY ONLINE "$name is playing somewhere else."; return
+      fi
+      acc_kick "$name" "$id"
+    fi
     ACC_NAME[$id]=$name; unset "ACC_NEW[$id]" "ACC_PASS[$id]"
     slog "login: $name ($id)"
     if [[ $keep == keep ]]; then acc_reply "$id" OK; return; fi

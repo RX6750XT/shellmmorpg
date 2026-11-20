@@ -123,7 +123,12 @@ def run(port):
         f = l.split('|')
         if len(f) >= 10 and f[1] == 'MON' and f[3] == 'W':
             mons[int(f[4])] = (int(f[5]), int(f[6]), int(f[7]), int(f[8]))
-    check('hundreds of monsters are synced', len(mons) > 300, f'(got {len(mons)})')
+    if HUB == 'python3':      # v6.3: interest management - only the monsters near you
+        far = [m for m, (t, x, y, hp) in mons.items() if abs(x - 80) > 58 or abs(y - 34) > 58]
+        check('dozens of monsters near you are synced', len(mons) > 30, f'(got {len(mons)})')
+        check('...but none from the other end of the world', not far, f'({len(far)} far away)')
+    else:
+        check('hundreds of monsters are synced', len(mons) > 300, f'(got {len(mons)})')
 
     # --- combat: kill a weak monster, get the reward ------------------------------------
     rats = [m for m, (t, x, y, hp) in mons.items() if t in (0, 1) and hp <= 40]
@@ -204,6 +209,17 @@ def run(port):
     check('the leader takes a party quest', a.wait(r'^SM1\|PQUEST\|srv\|p\d+\|K\.0\.3\.0\.50\.20$') is not None)
     b.send('PLEAVE', b.id)
     check('leaving dissolves a party of two', a.wait(r'^SM1\|PARTY\|srv\|p\d+\|\|$') is not None)
+
+    # --- interest management (v6.3, python3 hub): walking somewhere brings its monsters -------------------
+    if HUB == 'python3':
+        b.lines.clear(); b.pos(cls=3, x=300, y=120); b.pump(1.0)
+        got = [l.split('|') for l in b.lines if l.startswith('SM1|MON|srv|W|')]
+        check('walking far away brings the monsters there', len(got) > 5, f'({len(got)})')
+        check('...only those in range', all(abs(int(f[6]) - 300) <= 58 and abs(int(f[7]) - 120) <= 58 for f in got))
+        first = {f[4] for f in got}
+        b.lines.clear(); b.pos(cls=3, x=301, y=120); b.pump(0.5)
+        again = {l.split('|')[4] for l in b.lines if l.startswith('SM1|MON|srv|W|')}
+        check('...and only once', not (first & again), str(first & again))
 
     # --- leaving ----------------------------------------------------------------------------------
     b.send('BYE', b.id); b.close()

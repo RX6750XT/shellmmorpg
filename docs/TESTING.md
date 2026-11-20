@@ -29,7 +29,8 @@ installed) for the warning classes that are real bugs in this code base.
 | `test_render.sh` | every screen in ASCII and HD at 100×30, 120×40 and 200×60: no bash error, nothing past the right edge, the map frame intact; incremental frames end up exactly like full redraws |
 | `test_acct.py` | a real server with logins (once per hub): new heroes, chunked saves, loading, wrong passwords and the lock-out, one session per hero, nobody plays without a login or under another name, hero data is private (python3/socat), no password in the log |
 | `test_login.py` | real clients in a pty: create a hero, quit, come back from another computer, wrong password, nothing on the player's disk, an old local hero moves to the server |
-| `test_net.py` | a real dedicated server with protocol bots, once per hub (python3, socat, ncat): world sync, combat and loot, monster AI, anti-spoofing, garbage input, dungeons, parties, and no bash errors in the server log |
+| `test_restart.py` | (v6.3) a host and a friend in a pty, the world server is killed: the host restarts it, both log in again by themselves, see each other, nothing is lost, nothing is drawn over the game |
+| `test_net.py` | a real dedicated server with protocol bots, once per hub (python3, socat, ncat): world sync, combat and loot, monster AI, anti-spoofing, garbage input, dungeons, parties, interest management (python3: only nearby monsters, walking somewhere brings its monsters, once), and no bash errors in the server log |
 
 ## How the bash tests work
 

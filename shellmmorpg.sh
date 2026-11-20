@@ -34,7 +34,7 @@
 #  This file is built from src/*.sh and world.txt by build.sh - edit those.
 # ============================================================================
 
-VERSION="6.2"
+VERSION="6.3"
 DATA_DIR="${SHELLMMO_DIR:-$HOME/.shellmmorpg}"
 SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
 # string lengths must count characters, not bytes (emoji graphics): make sure we run in a UTF-8 locale
@@ -2588,6 +2588,101 @@ TOKEN = os.environ.get("SHELLMMO_HUB_TOKEN", "").encode()
 MAXBUF = 1 << 20
 clients = set()
 ids = {}          # writer -> bound sender id (b"srv" for the world server)
+# --- interest management (v6.3): in the open world a player only gets the monsters near them -------
+# The hub remembers every monster of W (from MON/MMOV/MHP) and where every player is (from their POS).
+# Monster lines go to the players in range; a monster that comes into range (it walks in, or the
+# player walks up to it) is sent as a full MON line; MDIE goes to everybody who knows the monster.
+R_IN, R_OUT, BK = 50, 58, 16
+mons = {}         # mid -> [type, x, y, hp, max, champ]
+grid = {}         # (bx, by) -> set of mids
+where = {}        # writer -> [map, x, y] (from the player's own POS)
+near = {}         # writer -> mids in range (they get every update)
+known = {}        # writer -> mids the player has heard of (they get MDIE)
+MONT = (b"MON", b"MMOV", b"MHP", b"MDIE", b"MATK")
+def mon_line(mid):
+    t, x, y, hp, mx, ch = mons[mid]
+    return b"SM1|MON|srv|W|%s|%s|%d|%d|%s|%s|%s\n" % (mid, t, x, y, hp, mx, ch)
+def mon_put(mid, x, y):
+    old = mons.get(mid)
+    if old:
+        grid.get((old[1] // BK, old[2] // BK), set()).discard(mid)
+    grid.setdefault((x // BK, y // BK), set()).add(mid)
+def around(x, y, r):
+    out = []
+    for bx in range((x - r) // BK, (x + r) // BK + 1):
+        for by in range((y - r) // BK, (y + r) // BK + 1):
+            for mid in grid.get((bx, by), ()):
+                m = mons[mid]
+                if abs(m[1] - x) <= r and abs(m[2] - y) <= r:
+                    out.append(mid)
+    return out
+def player_moved(c, f):
+    """f = POS fields after the type: id name cls lvl map x y ..."""
+    try:
+        mp, x, y = f[4], int(f[5]), int(f[6])
+    except (IndexError, ValueError):
+        return []
+    old = where.get(c)
+    where[c] = [mp, x, y]
+    if old is None or old[0] != mp:
+        near[c] = set(); known[c] = set()
+    if mp != b"W":
+        return []
+    nr = near[c]
+    keep = {m for m in nr if m in mons and abs(mons[m][1] - x) <= R_OUT and abs(mons[m][2] - y) <= R_OUT}
+    new = [m for m in around(x, y, R_IN) if m not in keep]
+    keep.update(new); near[c] = keep; known[c].update(new)
+    return [mon_line(m) for m in new]
+def monster_dest(typ, f, line, dest):
+    """f = fields after the type: srv map mid ...; returns [(writer, line)]"""
+    if len(f) < 3:
+        return [(c, line) for c in dest]
+    mp, mid = f[1], f[2]
+    full = None
+    if mp == b"W":
+        try:
+            if typ == b"MON" and len(f) >= 8:
+                x, y = int(f[4]), int(f[5]); mon_put(mid, x, y); mons[mid] = [f[3], x, y, f[6], f[7], f[8] if len(f) > 8 else b"0"]
+                full = line
+            elif typ == b"MMOV" and len(f) >= 5:
+                x, y = int(f[3]), int(f[4])
+                if len(f) >= 9:
+                    mon_put(mid, x, y); mons[mid] = [f[5], x, y, f[6], f[7], f[8]]
+                elif mid in mons:
+                    mon_put(mid, x, y); mons[mid][1:3] = [x, y]
+            elif typ == b"MHP" and mid in mons and len(f) >= 4:
+                mons[mid][3] = f[3]
+        except ValueError:
+            pass
+    out = []
+    for c in dest:
+        w = where.get(c)
+        if w is None or ids.get(c) == b"srv" or mp != b"W":     # (instances are small: everybody gets them)
+            out.append((c, line)); continue
+        if w[0] != mp:
+            continue
+        nr, kn = near[c], known[c]
+        if typ == b"MDIE":
+            if mid in kn:
+                out.append((c, line)); kn.discard(mid); nr.discard(mid)
+            continue
+        if typ == b"MATK" and len(f) >= 4 and f[3] == ids.get(c):
+            out.append((c, line)); continue
+        m = mons.get(mid)
+        if m is None:
+            out.append((c, line)); continue
+        dx, dy = abs(m[1] - w[1]), abs(m[2] - w[2])
+        if mid in nr:
+            if dx <= R_OUT and dy <= R_OUT:
+                out.append((c, line))
+            else:
+                nr.discard(mid)
+        elif dx <= R_IN and dy <= R_IN and typ in (b"MON", b"MMOV"):
+            nr.add(mid); kn.add(mid)
+            out.append((c, full or mon_line(mid)))
+    if typ == b"MDIE" and mp == b"W" and mid in mons:
+        m = mons.pop(mid); grid.get((m[1] // BK, m[2] // BK), set()).discard(mid)
+    return out
 async def handle(reader, writer):
     clients.add(writer)
     me = None
@@ -2627,11 +2722,17 @@ async def handle(reader, writer):
                 dest = [c for c in clients if ids.get(c) == typ[2:]]
             else:
                 dest = list(clients)
-            for c in dest:
+            if me == b"srv" and typ in MONT:
+                sends = monster_dest(typ, line[:-1].split(b"|")[2:], line, dest)
+            else:
+                sends = [(c, line) for c in dest]
+                if typ == b"POS" and me != b"srv":
+                    sends += [(writer, l) for l in player_moved(writer, line[:-1].split(b"|")[2:])]
+            for c, l in sends:
                 try:
                     if c.transport.get_write_buffer_size() > MAXBUF:
                         raise ConnectionError("client too slow")
-                    c.write(line)
+                    c.write(l)
                 except Exception:
                     clients.discard(c)
                     c.close()
@@ -2640,6 +2741,8 @@ async def handle(reader, writer):
     finally:
         clients.discard(writer)
         ids.pop(writer, None)
+        for d in (where, near, known):
+            d.pop(writer, None)
         try:
             writer.close()
         except Exception:
@@ -2696,6 +2799,7 @@ start_hub() {
         </dev/null >/dev/null 2>&1 & ;;
   esac
   HUB_PID=$!
+  disown "$HUB_PID" 2>/dev/null
   for (( i = 0; i < 30; i++ )); do
     sleep 0.1
     alive "$HUB_PID" || return 1
@@ -2708,8 +2812,9 @@ start_world_server() {
   local run=()
   command -v setsid >/dev/null 2>&1 && run=(setsid)
   mkdir -p "$DATA_DIR"
-  "${run[@]}" bash "$SELF" --world-server "$NET_PORT" </dev/null >"$DATA_DIR/server.log" 2>&1 &
+  "${run[@]}" bash "$SELF" --world-server "$NET_PORT" </dev/null >>"$DATA_DIR/server.log" 2>&1 &
   WS_PID=$!
+  disown "$WS_PID" 2>/dev/null           # (no "Killed" notice from bash on top of the game if it dies)
 }
 
 kill_tree() {
@@ -3139,7 +3244,7 @@ mon_step() {  # mid tx ty
     player_at "$map" "$nx" "$ny" && continue
     unset "OCC[$map:$x:$y]"; OCC["$map:$nx:$ny"]=$m
     MX[m]=$nx MY[m]=$ny
-    send MMOV srv "$map" "$m" "$nx" "$ny"
+    send MMOV srv "$map" "$m" "$nx" "$ny" "${MT[m]}" "${MHP[m]}" "${MMAX[m]}" $(( ${MCH[m]:--1} + 1 ))   # v6.3: full state (interest management)
     return 0
   done
   return 1
@@ -3409,7 +3514,7 @@ weather_second() {
 clock_second() {
   local gm=$(( (NOW - SRV_CLK0) % DAYLEN / GMIN ))
   NIGHT=$(( gm >= 1260 || gm < 300 ))
-  (( NOW >= ${CLK_NEXT:-0} )) && { CLK_NEXT=$(( NOW + 30000 )); send CLOCK srv $(( (NOW - SRV_CLK0) % DAYLEN )); }
+  (( NOW >= ${CLK_NEXT:-0} )) && { CLK_NEXT=$(( NOW + 10000 )); send CLOCK srv $(( (NOW - SRV_CLK0) % DAYLEN )); }
 }
 
 srv_invite() {  # from targetname
@@ -3608,7 +3713,7 @@ srv_line() {
     ASAVE) srv_asave "$from" "$a" "$b" "$c"; return ;;
   esac
   if (( ACCT_ON )); then                              # nobody plays without logging in, and only as the hero they logged in as
-    [[ -n ${ACC_NAME[$from]} ]] || return
+    [[ -n ${ACC_NAME[$from]} ]] || { acc_nudge "$from"; return; }
     ACC_SEEN[$from]=$NOW
     case $typ in HELLO|POS) [[ ${a//[^A-Za-z0-9_-]/} == "${ACC_NAME[$from]}" ]] || return ;; esac
   fi
@@ -3660,7 +3765,10 @@ server_main() {
   send ANN srv "World server online."
   while :; do
     if (( ! net_up )); then
-      sleep 1; net_connect && { slog "reconnected"; continue; }
+      if [[ $MODE == server ]] && ! alive "$HUB_PID"; then         # v6.3: the dedicated server brings its hub back
+        slog "the hub is gone - restarting it"; start_hub && slog "hub restarted"
+      fi
+      sleep 1; net_connect && { slog "reconnected"; tries=0; continue; }
       tries=$(( tries + 1 )); (( tries > 60 )) && exit 1
       continue
     fi
@@ -3919,6 +4027,24 @@ acc_online() {  # name id -> 0 if somebody else is logged in as that name right 
   return 1
 }
 
+declare -A ACC_NUDGE=()
+acc_nudge() {  # a player we do not know (the server restarted, or the session timed out): please log in again
+  (( NOW - ${ACC_NUDGE[$1]:-0} >= 5000 )) || return
+  ACC_NUDGE[$1]=$NOW
+  (( ${#ACC_NUDGE[@]} > 500 )) && ACC_NUDGE=()
+  acc_reply "$1" AUTH
+}
+
+acc_kick() {  # name new-id: end every other session of that hero
+  local i
+  for i in "${!ACC_NAME[@]}"; do
+    [[ $i != "$2" && ${ACC_NAME[$i],,} == "${1,,}" ]] || continue
+    acc_reply "$i" DENY KICK "$1 logged in somewhere else."
+    slog "! $1 ($i) taken over by $2"
+    srv_drop "$i"; acc_forget "$i"
+  done
+}
+
 acc_forget() { unset "ACC_NAME[$1]" "ACC_NEW[$1]" "ACC_PASS[$1]" "ACC_BUF[$1]" "ACC_NS[$1]" "ACC_SEEN[$1]" "ACC_RATE[$1]" "ACC_SVN[$1]" "ACC_SVT[$1]"; }
 
 srv_aload() {  # id name password [keep]
@@ -3929,7 +4055,7 @@ srv_aload() {  # id name password [keep]
   (( NOW - ${ACC_RATE[$id]:-0} >= 700 )) || { acc_reply "$id" DENY LOCK "Slow down."; return; }
   ACC_RATE[$id]=$NOW
   (( NOW >= ${ACC_LOCK[$key]:-0} )) || { acc_reply "$id" DENY LOCK "Too many wrong passwords - try again in a minute."; return; }
-  if acc_online "$name" "$id"; then acc_reply "$id" DENY ONLINE "$name is already playing (a crashed session times out after 8 seconds)."; return; fi
+  if [[ ! -r $ACC_DIR/$key.pw ]] && acc_online "$name" "$id"; then acc_reply "$id" DENY ONLINE "Somebody is creating $name right now."; return; fi
   ACC_SEEN[$id]=$NOW
   if [[ -r $ACC_DIR/$key.pw ]]; then
     read -r salt hsh nm < "$ACC_DIR/$key.pw"
@@ -3941,6 +4067,12 @@ srv_aload() {  # id name password [keep]
     fi
     ACC_FAIL[$key]=0
     [[ $nm == "$name" ]] || { acc_reply "$id" DENY NAME "That hero is called $nm."; return; }
+    if acc_online "$name" "$id"; then                # v6.3: the right password takes the hero over (quit and came straight back,
+      if [[ $keep == keep ]]; then                    # or a session hanging somewhere) - but a reconnect never kicks anybody
+        acc_reply "$id" DENY ONLINE "$name is playing somewhere else."; return
+      fi
+      acc_kick "$name" "$id"
+    fi
     ACC_NAME[$id]=$name; unset "ACC_NEW[$id]" "ACC_PASS[$id]"
     slog "login: $name ($id)"
     if [[ $keep == keep ]]; then acc_reply "$id" OK; return; fi
@@ -5354,7 +5486,10 @@ cli_srv() {  # typ fields...
   local typ=$1 a=$2 b=$3 c=$4 d=$5 e=$6 f=$7 g=$8 h=$9 x n old new q list=()
   case $typ in
     "AR$MY_ID") case $a in
-                  ACK) acct_acked ;;
+                  ACK)  acct_acked ;;
+                  AUTH) acct_nudged ;;                                  # v6.3: the server forgot us (it restarted)
+                  OK)   acct_back ;;
+                  DENY) if [[ $b == KICK ]]; then acct_kicked "$c"; else logm "The server refused the login: $c" "$K_HURT"; fi ;;
                   BAD) ACK_PEND=0; logm "The server did not accept your save: $b" "$K_HURT" ;;
                 esac ;;
     MON)  [[ $a == "$CUR_MAP" ]] && num "$b" && num "$c" && num "$d" && num "$e" && num "$f" && num "$g" || return
@@ -5362,8 +5497,13 @@ cli_srv() {  # typ fields...
           [[ ${SEEN:c:1} == 0 ]] && SEEN="${SEEN:0:c}1${SEEN:c+1}"
           cm_set "$b" "$c" "$d" "$e" "$f" "$g"; MAP_DIRTY=1
           CM_CH[$b]=0; [[ $h =~ ^[1-9][0-9]?$ ]] && (( h <= NCHP )) && CM_CH[$b]=$h ;;
-    MMOV) num "$b" && [[ $a == "$CUR_MAP" && -n ${CM_T[$b]} ]] && num "$c" && num "$d" || return
-          cm_move "$b" "$c" "$d"
+    MMOV) num "$b" && [[ $a == "$CUR_MAP" ]] && num "$c" && num "$d" || return
+          if [[ -z ${CM_T[$b]} ]]; then                      # v6.3: a monster we have not heard of (it walked into range)
+            num "$e" && num "$f" && num "$g" && (( e < NM )) || return
+            [[ ${SEEN:e:1} == 0 ]] && SEEN="${SEEN:0:e}1${SEEN:e+1}"
+            cm_set "$b" "$e" "$c" "$d" "$f" "$g"
+            CM_CH[$b]=0; [[ $h =~ ^[1-9][0-9]?$ ]] && (( h <= NCHP )) && CM_CH[$b]=$h
+          else cm_move "$b" "$c" "$d"; fi
           (( c - PX < VW / 2 + 2 && PX - c < VW / 2 + 2 && d - PY < VH / 2 + 2 && PY - d < VH / 2 + 2 )) && MAP_DIRTY=1 ;;
     MHP)  num "$b" && [[ $a == "$CUR_MAP" && -n ${CM_T[$b]} ]] && num "$c" || return
           CM_HP[$b]=$c ;;
@@ -5497,7 +5637,7 @@ cli_line() {
   fi
   IFS='|' read -r tag typ from a b c d e f g h i j k l q r <<< "$line"
   [[ $tag == SM1 && $from != "$MY_ID" ]] || return
-  if [[ $from == srv ]]; then cli_srv "$typ" "$a" "$b" "$c" "$d" "$e" "$f" "$g" "$h"; return; fi
+  if [[ $from == srv ]]; then LAST_SRV=$NOW; cli_srv "$typ" "$a" "$b" "$c" "$d" "$e" "$f" "$g" "$h"; return; fi
   [[ $from =~ ^[0-9a-f]{6}$ ]] || return
   nm=${a//[^A-Za-z0-9_-]/}; nm=${nm:0:12}; [[ -n $nm ]] || nm=anon
   case $typ in
@@ -8677,6 +8817,22 @@ cleanup() {
   [[ -n $old_stty ]] && stty "$old_stty" 2>/dev/null
   printf '\e[0m\e[?7h\e[?25h\e[?1049l'
   [[ -n $CLS ]] && echo "shellmmorpg: $MY_NAME (level $LVL ${C_NAME[CLS]}) saved. See you in Hearthmoor!"
+  [[ -n $KICKED ]] && echo "shellmmorpg: $KICKED This session ended without saving."
+}
+
+srv_watch() {  # v6.3: the world server says something at least every 10 s (CLOCK) - silence means it is gone
+  if [[ $MODE == host ]] && [[ -n $WS_PID ]] && ! alive "$WS_PID"; then
+    logm "The world server stopped - restarting it (see $DATA_DIR/server.log)." "$K_HURT"
+    { echo "--- restarted $(date)"; } >> "$DATA_DIR/server.log" 2>/dev/null
+    alive "$HUB_PID" || start_hub
+    start_world_server; LAST_SRV=$NOW
+    return
+  fi
+  if (( net_up && NOW - ${LAST_SRV:-$NOW} > 35000 )); then
+    LAST_SRV=$NOW
+    logm "The world server is not answering - reconnecting..." "$K_HURT"
+    net_lost
+  fi
 }
 
 client_main() {
@@ -8688,6 +8844,7 @@ client_main() {
     pick_hub_tool || die "hosting needs ncat, python3 or socat (joining works with plain bash)"
     echo "Starting the world on port $NET_PORT (hub: $HUB_TOOL)..."
     start_hub || { stop_all; die "could not open port $NET_PORT - already in use? Try --port"; }
+    : > "$DATA_DIR/server.log" 2>/dev/null
     start_world_server
   fi
   echo "Connecting to $NET_HOST:$NET_PORT..."
@@ -8751,6 +8908,7 @@ client_main() {
         WANTED_UNTIL=0
         send HELLO "$MY_ID" "$MY_NAME" "$CLS" "$LVL"; send_pos; send SYNC "$MY_ID" W
         (( SAVE_LOST )) && save_char
+        LAST_SRV=$NOW
         logm "Reconnected to the world." "$K_GOOD"
       fi
     fi
@@ -8758,7 +8916,7 @@ client_main() {
     [[ -n $GATH_MID ]] && gather_tick
     (( FISH_ST )) && fish_tick
     (( ALLY >= 0 )) && aly_tick
-    if (( NOW >= next_sec )); then next_sec=$(( NOW + 1000 )); regen; fi
+    if (( NOW >= next_sec )); then next_sec=$(( NOW + 1000 )); regen; srv_watch; fi
     (( DEAD && NOW >= dead_until )) && respawn
     (( clear_until && NOW >= clear_until )) && { clear_until=0; leave_instance; }
     if (( net_up )) && { (( POS_DIRTY && NOW - last_pos >= 60 )) || (( NOW - last_pos >= 2000 )); }; then send_pos; fi
@@ -11405,13 +11563,35 @@ acct_acked() {
   fi
 }
 
-acct_flush() {  # on quit: wait (at most 2 s) until the server confirmed our last saves
+acct_flush() {  # on quit: wait (at most 4 s) until the server confirmed our last saves
   local end
   (( CHAR_REMOTE && net_up && ACK_PEND > 0 )) || return 0
-  now_ms; end=$(( NOW + 2000 ))
+  now_ms; end=$(( NOW + 4000 ))
   while (( ACK_PEND > 0 && NOW < end )); do
     net_poll 50; (( ACK_PEND > 0 )) && sleep 0.05; now_ms
   done
+}
+
+# v6.3: the world server restarted under us (or dropped our session): log in again without blocking -
+# AUTH asks for it, OK (the answer to "keep") brings us back into the world
+acct_nudged() {
+  (( CHAR_REMOTE )) || return
+  (( NOW - ${ACC_NUDGED:-0} >= 3000 )) || return
+  ACC_NUDGED=$NOW
+  send ALOAD "$MY_ID" "$MY_NAME" "$ACC_PASS" keep
+}
+acct_back() {
+  (( CHAR_REMOTE )) || return
+  [[ $CUR_MAP != W ]] && leave_instance quiet
+  [[ -n $MY_PARTY ]] && { MY_PARTY="" PARTY_LEADER="" PARTY_IDS=(); pq_to_personal; }
+  send HELLO "$MY_ID" "$MY_NAME" "$CLS" "$LVL"; send_pos; send SYNC "$MY_ID" W
+  ACK_PEND=0; save_char
+  logm "The world server is back - you are in the world again." "$K_GOOD"
+}
+acct_kicked() {  # our hero logged in somewhere else: stop at once, and do not save over the new session
+  CLS=""                                   # (save_char does nothing without a class)
+  KICKED=$1
+  exit 0
 }
 
 # ---------------------------------------------------------------------------

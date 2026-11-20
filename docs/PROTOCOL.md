@@ -72,7 +72,7 @@ All sent with `from` = `srv`; clients act on the ones for their map or id.
 | Type | Fields | Meaning |
 | --- | --- | --- |
 | `MON` | map mid type x y hp max [champ] | a monster exists (full state); `champ` 0 = normal, 1-10 = champion affix + 1 (v3.0, 8-10 since v4.0) |
-| `MMOV` | map mid x y | it moved |
+| `MMOV` | map mid x y [type hp max champ] | it moved; since v6.3 with the full state, so a client that never heard of the monster (it walked into range) can show it |
 | `MHP` | map mid hp [attacker] | its HP changed |
 | `MDIE` | map mid killer-name\|- | it died |
 | `MATK` | map mid target-id damage [element effect] | it hits a player; `element` 0-6 (physical fire frost poison shadow holy arcane), `effect` `poison` `bleed` `burn` `chill` `stun` `weaken` or empty (v3.0) |
@@ -115,7 +115,32 @@ afterwards `HELLO` and `POS` must carry the hero's name.
 | | `OK` | (server) logged in again (answer to `keep`) |
 | | `ACK` | (server) the save is stored |
 | | `BAD` text | (server) the save was refused (not a hero, too many saves) |
-| | `DENY` `PASS`\|`NAME`\|`ONLINE`\|`LOCK` text | (server) no login: wrong password, bad name, the hero is already playing (a dead session times out after 8 s), five wrong passwords (a minute) |
+| | `AUTH` | (server, v6.3) I do not know you (I restarted, or your session timed out): log in again with `keep` - at most every 5 s |
+| | `DENY` `PASS`\|`NAME`\|`ONLINE`\|`LOCK`\|`KICK` text | (server) no login: wrong password, bad name, the hero is being created or (for `keep`) playing elsewhere, five wrong passwords (a minute); `KICK` (v6.3): your hero logged in somewhere else with the right password - this session is over, do not save |
+
+## Interest management (v6.3, python3 hub)
+
+In the open world (`W`) the hub forwards `MON` `MMOV` `MHP` `MATK` only to
+players within 50 tiles of the monster (and keeps them until 58 tiles,
+so nothing flickers at the edge). It remembers every monster's last state
+and position: when a monster walks into range, or a player walks (or
+teleports) up to it, the player gets one full `MON` line from the hub.
+`MDIE` goes to everybody who ever got that monster; `MATK` always reaches
+its target. Lines about instances (`D`, `H`) and everything else go to
+everybody, as before. The world server itself still gets everything. The
+socat and ncat hubs relay everything - clients work the same with both.
+
+Traffic per player stays flat as players join (about 30 lines a second
+while walking, before: 30 with one player, 120 with eight), and a join no
+longer sends the whole world (~1100 monsters) to every player.
+
+## Heartbeat (v6.3)
+
+The world server sends `CLOCK` every 10 s. A client that hears nothing from
+the server for 35 s reconnects. A host whose world server process died
+restarts it (and the hub); everybody logs in again by themselves (`AUTH`).
+A dedicated server restarts its hub if it dies; a hub exits when the game
+that started it is gone.
 
 ## World server ↔ hub
 

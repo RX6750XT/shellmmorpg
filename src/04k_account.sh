@@ -106,11 +106,33 @@ acct_acked() {
   fi
 }
 
-acct_flush() {  # on quit: wait (at most 2 s) until the server confirmed our last saves
+acct_flush() {  # on quit: wait (at most 4 s) until the server confirmed our last saves
   local end
   (( CHAR_REMOTE && net_up && ACK_PEND > 0 )) || return 0
-  now_ms; end=$(( NOW + 2000 ))
+  now_ms; end=$(( NOW + 4000 ))
   while (( ACK_PEND > 0 && NOW < end )); do
     net_poll 50; (( ACK_PEND > 0 )) && sleep 0.05; now_ms
   done
+}
+
+# v6.3: the world server restarted under us (or dropped our session): log in again without blocking -
+# AUTH asks for it, OK (the answer to "keep") brings us back into the world
+acct_nudged() {
+  (( CHAR_REMOTE )) || return
+  (( NOW - ${ACC_NUDGED:-0} >= 3000 )) || return
+  ACC_NUDGED=$NOW
+  send ALOAD "$MY_ID" "$MY_NAME" "$ACC_PASS" keep
+}
+acct_back() {
+  (( CHAR_REMOTE )) || return
+  [[ $CUR_MAP != W ]] && leave_instance quiet
+  [[ -n $MY_PARTY ]] && { MY_PARTY="" PARTY_LEADER="" PARTY_IDS=(); pq_to_personal; }
+  send HELLO "$MY_ID" "$MY_NAME" "$CLS" "$LVL"; send_pos; send SYNC "$MY_ID" W
+  ACK_PEND=0; save_char
+  logm "The world server is back - you are in the world again." "$K_GOOD"
+}
+acct_kicked() {  # our hero logged in somewhere else: stop at once, and do not save over the new session
+  CLS=""                                   # (save_char does nothing without a class)
+  KICKED=$1
+  exit 0
 }

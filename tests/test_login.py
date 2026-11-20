@@ -74,7 +74,12 @@ def main():
         c2.pump(5)
         check('the hero is loaded: welcome back', 'Welcome back' in c2.text())
         check('...as a Cleric', 'Cleric' in c2.text())
-        c2.stop()
+        # v6.3: logging in from a third computer takes the hero over, the second session ends without saving
+        c2b = Client(port, 'tess', f'{base}/home3', 'secret1')
+        c2b.pump(5); c2.pump(2)
+        check('a new login takes the hero over', 'Welcome back' in c2b.text())
+        check('...the old session ends', c2.p.poll() is not None and 'somewhere else' in c2.text(), c2.text()[-200:])
+        c2b.stop()
         # wrong password
         c3 = Client(port, 'tess', f'{base}/home3', 'wrongpw')
         c3.pump(3); c3.stop()

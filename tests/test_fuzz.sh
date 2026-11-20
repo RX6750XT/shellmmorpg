@@ -7,10 +7,11 @@ LINES=${T_ARGS[0]:-3000} RANDOM=${T_ARGS[1]:-99}
 send() { SENT_N=$(( ${SENT_N:-0} + 1 )); return 0; }; slog() { :; }
 load_world; now_ms; spawn_world; WH_LAST=$(( NOW / 150 - 1 ))
 ERR=$T_TMP/err; : > "$ERR"
-ids=(aaaaaa bbbbbb cccccc dddddd eeeeee 000000 ffffff)
+ids=(aaaaaa bbbbbb cccccc dddddd eeeeee 000000 ffffff 151add 9e1715 0123ab)
 pick() { local -n arr=$1; PICK=${arr[RANDOM % ${#arr[@]}]}; }
-TYPES=(HELLO POS POS POS HIT HIT HIT DREQ SYNC INV PACC PLEAVE QADD QTALK BYE CHAT AUTH)
-garbage=('a[$(touch /tmp/fuzz_pwned)]' '-1' '99999999999' '' 'x' '08' '$((1/0))' '*' 'W' 'D1' 'D99999' 'H123' 'K.5.10.0.100.50'
+TYPES=(HELLO POS POS POS HIT HIT HIT DREQ SYNC INV PACC PLEAVE QADD QTALK BYE CHAT AUTH ALOAD ASAVE ALOAD ASAVE)
+ACC_DIR=$T_TMP/chars; acc_init; (( RANDOM % 2 )) && ACCT_ON=1
+garbage=('hero' 'hero2' 'pass1234' 'version=2' "version=2${US}CLS=1" '../x' 'a[$(touch /tmp/fuzz_pwned)]' '-1' '99999999999' '' 'x' '08' '$((1/0))' '*' 'W' 'D1' 'D99999' 'H123' 'K.5.10.0.100.50'
          'K.999.1.0.1.1' 'D.18.1.0.1.1' "$(printf '%0300d' 0)" '1e3' ' 5' '5 ' '+3')
 field() {  # a field that is often almost right
   local mid

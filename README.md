@@ -20,6 +20,7 @@ level up to 40 - and rent a room at the inn to show off your trophies.
 ./shellmmorpg.sh                      # start a world and play - friends can join
 ./shellmmorpg.sh --join 192.168.1.20  # join a friend's world (port 4747)
 ./shellmmorpg.sh --server 4747        # dedicated server, no player
+./shellmmorpg.sh --ssh me@host        # play on a server over ssh (docs/SERVER.md)
 ./shellmmorpg.sh --ascii              # classic ASCII graphics ([v] toggles in game)
 ```
 
@@ -28,8 +29,10 @@ Press **?** in the game for all controls. New here? Read the
 
 **Needs:** bash 4.3+ (5.x recommended), a 256-color UTF-8 terminal of at
 least 100×30. Hosting a world also needs one of `python3`, `socat` or `ncat`
-for the network hub (joining needs nothing but bash). Characters live in
-`~/.shellmmorpg/` (`SHELLMMO_DIR` moves them).
+for the network hub (joining needs nothing but bash). Since 6.2 **heroes
+live on the server**, protected by a password you choose when you create
+one: the world's host keeps them in `~/.shellmmorpg/chars/` (`SHELLMMO_DIR`
+moves that), nothing is stored on a joining player's computer.
 
 ## What's in it
 
@@ -77,7 +80,7 @@ for the network hub (joining needs nothing but bash). Characters live in
 | `build.sh` | joins `src/` + `world.txt` into `shellmmorpg.sh` |
 | `tests/` | the test suite ([testing](docs/TESTING.md)) |
 | `tools/worldgen/` | the generators that made `world.txt` |
-| `docs/` | guides: [player](docs/PLAYER_GUIDE.md), [architecture](docs/ARCHITECTURE.md), [protocol](docs/PROTOCOL.md), [modding](docs/MODDING.md), [testing](docs/TESTING.md) |
+| `docs/` | guides: [player](docs/PLAYER_GUIDE.md), [architecture](docs/ARCHITECTURE.md), [protocol](docs/PROTOCOL.md), [modding](docs/MODDING.md), [testing](docs/TESTING.md), [running a server](docs/SERVER.md) |
 | `CHANGELOG.md` | what changed in every version |
 
 Working on it:

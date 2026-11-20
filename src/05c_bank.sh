@@ -59,6 +59,7 @@ bag_buy() {  # B.k -> 1 if there is no room for it
 
 # --- the shared chest (a file every hero on this computer can reach) ------------------
 sc_load() {
+  (( CHAR_REMOTE )) && return 0                      # v6.2: the shared chest is part of your hero, on the server
   local k v x i
   SC_ITEMS=() SC_G=0 SC_M=()
   for (( i = 0; i < NMAT; i++ )); do SC_M[i]=0; done
@@ -74,6 +75,7 @@ sc_load() {
 }
 
 sc_save() {
+  (( CHAR_REMOTE )) && return 0                      # (bk_commit saves the hero, chest included)
   local IFS=$' \t\n' tmp="$SC_FILE.tmp.$$"
   mkdir -p "$DATA_DIR" 2>/dev/null
   { echo "ITEMS=${SC_ITEMS[*]}"; echo "GOLD=$SC_G"; echo "MATS=${SC_M[*]}"; } > "$tmp" 2>/dev/null && mv -f "$tmp" "$SC_FILE"

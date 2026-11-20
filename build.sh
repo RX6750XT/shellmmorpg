@@ -7,9 +7,9 @@
 # ---------------------------------------------------------------------------
 cd "$(dirname "$0")" || exit 1
 out=shellmmorpg.sh
-MODULES=(src/01_core.sh src/01b_content.sh src/01c_v3data.sh src/01d_v4data.sh src/01e_v45data.sh src/01f_v50data.sh src/01g_v60data.sh src/02_net.sh src/03_server.sh src/03b_server45.sh src/04_client.sh
+MODULES=(src/01_core.sh src/01b_content.sh src/01c_v3data.sh src/01d_v4data.sh src/01e_v45data.sh src/01f_v50data.sh src/01g_v60data.sh src/02_net.sh src/03_server.sh src/03b_server45.sh src/03c_accounts.sh src/04_client.sh
          src/04b_life.sh src/04c_gfx.sh src/04e_allies.sh src/04f_story.sh src/04g_v3.sh src/05_ui.sh
-         src/05b_inv.sh src/05c_bank.sh src/05d_v3ui.sh src/04h_v45.sh src/05e_v45ui.sh src/04i_v50.sh src/05f_v50ui.sh src/04j_v60.sh)
+         src/05b_inv.sh src/05c_bank.sh src/05d_v3ui.sh src/04h_v45.sh src/05e_v45ui.sh src/04i_v50.sh src/05f_v50ui.sh src/04j_v60.sh src/04k_account.sh)
 
 if [[ $1 == --where ]]; then             # map a line of the built script back to its source
   n=$2 at=0

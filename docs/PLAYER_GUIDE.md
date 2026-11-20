@@ -9,6 +9,7 @@ story ends. The in-game help (**?**) has the short version.
 ```bash
 ./shellmmorpg.sh                 # host a world (friends can join you)
 ./shellmmorpg.sh --join HOST     # join someone else's world
+./shellmmorpg.sh --ssh me@HOST   # play on a server you have an ssh login for
 ./shellmmorpg.sh --name Lyra     # play another character (default: your user name)
 ```
 
@@ -16,8 +17,15 @@ A new hero picks a class and a look (symbol and color). You wake up in
 **Hearthmoor**. Talk to **Old Tom the Innkeeper** first - he starts the story.
 The quest board (**!** / 📜 on the plaza) hands out your first jobs.
 
-Your character is saved every 30 seconds and when you quit (**Q**), in
-`~/.shellmmorpg/<name>.char`. Every world you join uses the same character.
+Your hero lives **on the server** (since 6.2), not on your computer. The
+first time you join a world you choose a password for the name; afterwards
+the game asks for it at login (or set `SHELLMMO_PASS`). The server keeps your
+hero safe: it is saved every 30 seconds, whenever something important
+happens and when you quit (**Q**). Another world is another hero. Only one
+session per hero at a time. Five wrong passwords lock the name for a minute.
+A hero saved by an older version on your computer
+(`~/.shellmmorpg/<name>.char`) moves to the server the first time you log in
+with that name; the old file is renamed to `.moved-to-server`.
 
 ## Controls
 

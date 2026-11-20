@@ -135,6 +135,7 @@ srv_hello() {  # id name
 }
 
 srv_drop() {
+  acc_forget "$1"
   [[ -n ${SP_NAME[$1]} ]] || return
   slog "- ${SP_NAME[$1]} ($1) left"
   srv_pleave "$1"
@@ -824,6 +825,9 @@ srv_second() {
   for id in "${!SP_NAME[@]}"; do
     (( NOW - ${SP_SEEN[$id]:-0} > 15000 )) && srv_drop "$id"
   done
+  for id in "${!ACC_NAME[@]}"; do               # logged in but never entered the world (or gone): forget after ten minutes
+    [[ -z ${SP_NAME[$id]} ]] && (( NOW - ${ACC_SEEN[$id]:-0} > 600000 )) && acc_forget "$id"
+  done
   for map in "${!IN_TYPE[@]}"; do
     cnt=0
     for id in "${!SP_NAME[@]}"; do [[ ${SP_MAP[$id]} == "$map" ]] && cnt=$(( cnt + 1 )); done
@@ -842,6 +846,15 @@ srv_line() {
   (( ${#line} <= 2048 )) || return
   IFS='|' read -r tag typ from a b c d e f g h i <<< "$line"
   [[ $tag == SM1 && $from =~ ^[0-9a-f]{6}$ ]] || return
+  case $typ in                                        # v6.2: heroes live on the server
+    ALOAD) srv_aload "$from" "$a" "$b" "$c"; return ;;
+    ASAVE) srv_asave "$from" "$a" "$b" "$c"; return ;;
+  esac
+  if (( ACCT_ON )); then                              # nobody plays without logging in, and only as the hero they logged in as
+    [[ -n ${ACC_NAME[$from]} ]] || return
+    ACC_SEEN[$from]=$NOW
+    case $typ in HELLO|POS) [[ ${a//[^A-Za-z0-9_-]/} == "${ACC_NAME[$from]}" ]] || return ;; esac
+  fi
   case $typ in
     HELLO) srv_hello "$from" "$a" ;;
     POS)   # name cls lvl map x y hp maxhp dead sym col
@@ -876,6 +889,8 @@ server_main() {
   on_line() { srv_line "$1"; }
   net_lost() { net_up=0; exec 7>&- 2>/dev/null; slog "lost connection to the hub"; }
   load_world
+  ACCT_ON=1; [[ $SHELLMMO_OPEN == 1 ]] && ACCT_ON=0       # SHELLMMO_OPEN=1: no logins (old tests)
+  (( ACCT_ON )) && acc_init
   slog "shellmmorpg world server v$VERSION - map ${MAPW[W]}x${MAPH[W]} - port $NET_PORT"
   NET_HOST=127.0.0.1
   until net_connect; do

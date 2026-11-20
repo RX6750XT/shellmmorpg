@@ -14,7 +14,9 @@ if [[ $1 != quick ]]; then
     for hub in python3 socat ncat; do
       [[ $hub == python3 ]] || command -v "$hub" >/dev/null || continue
       SHELLMMO_HUB=$hub timeout 300 python3 tests/test_net.py || fails=$(( fails + 1 ))
+      SHELLMMO_HUB=$hub timeout 300 python3 tests/test_acct.py || fails=$(( fails + 1 ))
     done
+    timeout 300 python3 tests/test_login.py || fails=$(( fails + 1 ))
   else
     echo "test_net       skipped (needs python3)"
   fi

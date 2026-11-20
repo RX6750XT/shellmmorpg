@@ -83,7 +83,7 @@ class Bot:
 def main():
     port = random.randint(20000, 40000)
     data = tempfile.mkdtemp(prefix='shellmmo_net_')
-    env = dict(os.environ, SHELLMMO_DIR=data, SHELLMMO_HUB=HUB, SHELLMMO_WB_DELAY='9999999')
+    env = dict(os.environ, SHELLMMO_DIR=data, SHELLMMO_HUB=HUB, SHELLMMO_WB_DELAY='9999999', SHELLMMO_OPEN='1')
     srv = subprocess.Popen(['bash', GAME, '--server', str(port)], env=env, stdout=subprocess.PIPE,
                            stderr=subprocess.STDOUT, start_new_session=True)
     try:
@@ -110,8 +110,8 @@ def main():
 
 
 def run(port):
-    a = Bot(port, 'aaaaaa', 'alice')
-    b = Bot(port, 'bbbbbb', 'bob')
+    a = Bot(port, '151add', 'alice')
+    b = Bot(port, '9e1715', 'bob')
     a.hello(); b.hello(cls=3)
 
     # --- the world comes in on join --------------------------------------------------
@@ -136,7 +136,7 @@ def run(port):
             a.send('HIT', a.id, 'W', m, 200, 0)
             a.pump(0.2)
         check('the monster dies', a.wait(rf'^SM1\|MDIE\|srv\|W\|{m}\|alice') is not None)
-        check('the killer gets XP and gold', a.wait(r'^SM1\|REW\|srv\|aaaaaa\|\d+\|\d+\|') is not None)
+        check('the killer gets XP and gold', a.wait(r'^SM1\|REW\|srv\|151add\|\d+\|\d+\|') is not None)
         a.send('HIT', a.id, 'W', m, 200, 0)          # hitting a corpse does nothing
         a.pump(0.3)
 
@@ -152,15 +152,15 @@ def run(port):
         end = time.time() + 12
         while bit is None and time.time() < end:
             a.pos(x=x + 2, y=y)                      # stand still, keep the server fed with positions
-            bit = a.wait(rf'^SM1\|MATK\|srv\|W\|{m}\|aaaaaa\|\d+', 1)
+            bit = a.wait(rf'^SM1\|MATK\|srv\|W\|{m}\|151add\|\d+', 1)
         check('an aggressive monster attacks', bit is not None)
         check('monsters move around players', any(l.startswith('SM1|MMOV|srv|W|') for l in a.lines))
 
     # --- anti-spoofing (python3 and socat hubs) -------------------------------------------
     b.lines.clear()
     a.send('ANN', 'srv', 'HACKED')                   # pretend to be the server
-    a.send('CHAT', 'bbbbbb', 'bob', 'impersonated')  # pretend to be someone else
-    a.send('CHAT', 'aaaaaa', 'alice', 'legit')
+    a.send('CHAT', '9e1715', 'bob', 'impersonated')  # pretend to be someone else
+    a.send('CHAT', '151add', 'alice', 'legit')
     b.pump(1.0)
     if HUB in ('python3', 'socat'):
         check('nobody can speak as the server', not any('HACKED' in l for l in b.lines))
@@ -168,10 +168,10 @@ def run(port):
     check('normal chat gets through', any('legit' in l for l in b.lines))
 
     # --- garbage does not take the server down ---------------------------------------------
-    junk = ['', 'hello', 'SM1', 'SM1|', 'SM1|||||', 'SM1|HIT|aaaaaa|W|08|5|0', 'SM1|HIT|aaaaaa|W|1+1|5|0',
-            'SM1|HIT|aaaaaa|W|a[$(touch /tmp/shellmmo_pwned)]|5|0', 'SM1|POS|aaaaaa|x|9|999|W|1|1|1|1|0',
-            'SM1|DREQ|aaaaaa|99', 'SM1|DREQ|aaaaaa|$(id)', 'SM1|QADD|aaaaaa|K.1.1.0.1.1;ls',
-            'SM1|SYNC|aaaaaa|../../etc', 'SM1|' + 'A' * 3000, '\xff\xfe garbage \x00', 'SM1|INV|aaaaaa|x|' + 'b' * 500]
+    junk = ['', 'hello', 'SM1', 'SM1|', 'SM1|||||', 'SM1|HIT|151add|W|08|5|0', 'SM1|HIT|151add|W|1+1|5|0',
+            'SM1|HIT|151add|W|a[$(touch /tmp/shellmmo_pwned)]|5|0', 'SM1|POS|151add|x|9|999|W|1|1|1|1|0',
+            'SM1|DREQ|151add|99', 'SM1|DREQ|151add|$(id)', 'SM1|QADD|151add|K.1.1.0.1.1;ls',
+            'SM1|SYNC|151add|../../etc', 'SM1|' + 'A' * 3000, '\xff\xfe garbage \x00', 'SM1|INV|151add|x|' + 'b' * 500]
     for j in junk:
         a.s.sendall((j + '\n').encode('utf-8', 'replace'))
     a.pump(0.5)
@@ -183,7 +183,7 @@ def run(port):
     # --- a solo dungeon -----------------------------------------------------------------------
     a.lines.clear()
     a.send('DREQ', a.id, 0)
-    m = a.wait(r'^SM1\|DSTART\|srv\|(D\d+)\|0\|(\d+)\|(\d+)\|aaaaaa\|0\|0\|0$')
+    m = a.wait(r'^SM1\|DSTART\|srv\|(D\d+)\|0\|(\d+)\|(\d+)\|151add\|0\|0\|0$')
     check('a dungeon instance opens', m is not None)
     if m:
         inst = m.group(1)
@@ -196,10 +196,10 @@ def run(port):
     # --- a party -------------------------------------------------------------------------------
     a.pos(); b.lines.clear(); a.lines.clear()
     a.send('INV', a.id, 'alice', 'bob')
-    check('the invite arrives', b.wait(r'^SM1\|PINV\|srv\|bbbbbb\|alice$') is not None)
+    check('the invite arrives', b.wait(r'^SM1\|PINV\|srv\|9e1715\|alice$') is not None)
     b.send('PACC', b.id)
-    m = a.wait(r'^SM1\|PARTY\|srv\|(p\d+)\|aaaaaa\|([a-f0-9,]+)$')
-    check('the party forms', m is not None and 'bbbbbb' in (m.group(2) if m else ''))
+    m = a.wait(r'^SM1\|PARTY\|srv\|(p\d+)\|151add\|([a-f0-9,]+)$')
+    check('the party forms', m is not None and '9e1715' in (m.group(2) if m else ''))
     a.send('QADD', a.id, 'K.0.3.0.50.20')
     check('the leader takes a party quest', a.wait(r'^SM1\|PQUEST\|srv\|p\d+\|K\.0\.3\.0\.50\.20$') is not None)
     b.send('PLEAVE', b.id)

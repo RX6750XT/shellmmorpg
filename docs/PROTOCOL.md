@@ -97,6 +97,26 @@ All sent with `from` = `srv`; clients act on the ones for their map or id.
 | `DCLEAR` | map boss-name | the boss is dead |
 | `DEND` | map | the instance closed |
 
+## Heroes on the server (v6.2)
+
+Heroes are stored by the world server. These lines are **private**: the
+python3 and socat hubs deliver `ALOAD`/`ASAVE` only to the world server and
+`AR<id>` only to the player `<id>` (the id is part of the type, 6 hex digits,
+sent by the server). The ncat hub relays blindly - everybody sees them
+there. Before the login the server ignores everything but `ALOAD` and `BYE`;
+afterwards `HELLO` and `POS` must carry the hero's name.
+
+| Type | Fields | Meaning |
+| --- | --- | --- |
+| `ALOAD` | name password [`keep`] | log in as `name` (4-32 printable characters, no `\|`). `keep`: only log in again after a lost connection, do not send the hero |
+| `ASAVE` | n total chunk | the hero's save text, chunk `n` of `total` (at most 60 of 1400 characters; newlines are written as the unit separator `\x1f`) |
+| `AR<id>` | `NONE` | (server) this name is free: a new hero is created by the first `ASAVE` |
+| | `DATA` n total chunk | (server) the saved hero, in order |
+| | `OK` | (server) logged in again (answer to `keep`) |
+| | `ACK` | (server) the save is stored |
+| | `BAD` text | (server) the save was refused (not a hero, too many saves) |
+| | `DENY` `PASS`\|`NAME`\|`ONLINE`\|`LOCK` text | (server) no login: wrong password, bad name, the hero is already playing (a dead session times out after 8 s), five wrong passwords (a minute) |
+
 ## World server ↔ hub
 
 | Type | Fields | Meaning |
@@ -128,9 +148,11 @@ million, heals 2000, buffs 16 s, damage by level).
 
 ## Trust model
 
-The game has no accounts. **Clients are trusted with their own character**:
-a modified client can claim any level, gear or gold. This is a game for
-friends.
+Heroes are accounts (name + password, stored as a salted hash on the
+server). Since 6.2 the hero is stored on the server, but **clients are still
+trusted with their own character**: a modified client can save any level,
+gear or gold into its own hero. This is a game for friends. The password
+travels as plain text: use ssh (see SERVER.md) outside a trusted network.
 
 What the server and hub do guarantee (python3 and socat hubs):
 

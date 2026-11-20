@@ -14,7 +14,7 @@ declare -A ARROW=([UP]='[A' [DOWN]='[B' [RIGHT]='[C' [LEFT]='[D')
 KEYS=(w a s d w a s d w a s d UP DOWN LEFT RIGHT ESC $'\r' ' ' $'\t' $'\x7f' 1 2 3 4 5 6 7 8 9 0 - =
       e r u g i m q b c n v p y x z Z o H f t j k l h '?' '<' '>' , . '[' ']' '+' A B C D E F G I J K L M N O P R S T U V W X Y '/' '!' '#')
 UIS=("" inv shop talk quest map way help beasts chatlog prof craft bank allies allyshop talents jewel wares qlog dgate stable valor ach inn visit book guest)
-ids=(beefed c0ffee abc123 000000 ffffff)
+ids=(beefed c0ffee abc123 000000 ffffff 151add 9e1715 0123ab)
 garbage=('a[$(touch /tmp/monkey_pwned)]' '-1' '99999999999' '' 'x' '08' '1.5' '$((1/0))' '*' '|' "$(printf '%0400d' 0)" 'C.5' 'U.3' 'W.0.12.3.r4__' 'H1' 'D3' 'W')
 pick() { local -n arr=$1; PICK=${arr[RANDOM % ${#arr[@]}]}; }
 

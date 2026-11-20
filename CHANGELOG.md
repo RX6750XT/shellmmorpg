@@ -1,5 +1,48 @@
 # Changelog
 
+## 6.2 - heroes live on the server
+
+**Heroes are created and saved on the server only**
+- Joining a world now means logging in: `name` + password. A new name
+  creates a new hero (the game asks twice for the password); the hero is
+  stored by the world server in `chars/<name>.char`, the password only as a
+  salted hash (`<name>.pw`). Nothing is written on the joining player's
+  computer - play from any machine, ssh login or not.
+- Saved every 30 seconds, on important events and on quit (the client waits
+  for the server to confirm); after a lost connection the client logs in
+  again by itself and saves what happened meanwhile.
+- One session per hero; a crashed session times out after 8 seconds. Five
+  wrong passwords lock the name for a minute. Nobody can enter the world
+  without logging in or under another name than their hero's.
+- Hero data and passwords are private: the python3 and socat hubs deliver
+  them to the world server only, answers to the one player only. (The ncat
+  hub relays blindly, as it always did.)
+- Old heroes saved on a player's computer move to the server the first time
+  they log in (the file becomes `<name>.char.moved-to-server`).
+- The shared chest is now part of the hero (it used to be a file shared by
+  all heroes on one computer).
+- New: `SHELLMMO_PASS`. For tests `SHELLMMO_OPEN=1` starts a server without
+  logins. See [PROTOCOL.md](docs/PROTOCOL.md) and [SERVER.md](docs/SERVER.md).
+
+## 6.1 - multiplayer fixed, servers over ssh
+
+**The multiplayer crash**
+- With two or more players every client died at once with `value too great
+  for base`. Cause: the table of other players' mounts (`OP_MNT`) was never
+  declared as an associative array, so a player id that starts with digits
+  and has letters after them (`151add`, `9e1715` - about one in three ids)
+  was evaluated as a number. Fixed; it is also cleaned up when a player
+  leaves, together with that player's HD glyph.
+- Tests now use such ids everywhere (`test_net`, `test_fuzz`, `test_monkey`)
+  and the new `test_v61` replays a whole visit by players with ids like that.
+
+**Servers over ssh**
+- `--bind ADDR` makes the hub listen on one address only (all three hubs).
+- `--ssh [user@]host[:sshport]` plays on a server through ssh.
+- `deploy/install.sh` installs a server (systemd service, listening on
+  127.0.0.1) and the `shellmmorpg-play` command players run after logging in.
+  See [docs/SERVER.md](docs/SERVER.md).
+
 ## 6.0 - more of everything, and the big bug hunt
 
 **More creatures**

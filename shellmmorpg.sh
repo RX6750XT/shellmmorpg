@@ -6,6 +6,8 @@
 #  ./shellmmorpg.sh --join HOST[:PORT]  join a friend's world
 #  ./shellmmorpg.sh --server [PORT]     dedicated server without a player
 #  ./shellmmorpg.sh --port PORT         port to host on (default 4747)
+#  ./shellmmorpg.sh --bind ADDR         listen only on this address (127.0.0.1 behind ssh)
+#  ./shellmmorpg.sh --ssh [USER@]HOST   play on a server over ssh (see deploy/ and docs/SERVER.md)
 #  ./shellmmorpg.sh --name NAME         character name (default: $USER)
 #  ./shellmmorpg.sh --ascii / --hd      classic ASCII or HD emoji graphics ([v] in game)
 #  ./shellmmorpg.sh --help              this help
@@ -32,7 +34,7 @@
 #  This file is built from src/*.sh and world.txt by build.sh - edit those.
 # ============================================================================
 
-VERSION="6.0"
+VERSION="6.2"
 DATA_DIR="${SHELLMMO_DIR:-$HOME/.shellmmorpg}"
 SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
 # string lengths must count characters, not bytes (emoji graphics): make sure we run in a UTF-8 locale
@@ -48,26 +50,37 @@ shopt -u patsub_replacement 2>/dev/null   # "&" in replacements stays literal
 set -f                                   # no globbing on word splits
 
 hub_handler() {   # socat backend: one process per client, relays via a shared log
-  local log=$1 line tp me="" r f
-  tail -n0 -F "$log" 2>/dev/null &
+  local log=$1 line tp me="" r f mf="$1.me.$$"
+  # relay the log to this client - except the private lines meant for others (hero data and passwords
+  # go to the world server only, AR<id> answers to that one player); awk learns who we are from $mf
+  { tail -n0 -F "$log" 2>/dev/null | awk -F'|' -v mf="$mf" '
+      function who() { if (me == "") { getline me < mf; close(mf) } return me }
+      { t = $2
+        if (t == "ALOAD" || t == "ASAVE") { if (who() != "srv") next }
+        else if (substr(t, 1, 2) == "AR" && length(t) == 8) { if (t != "AR" who()) next }
+        print; fflush() }'; } &
   tp=$!
   while IFS= read -r line; do
     (( ${#line} <= 2048 )) && [[ $line == SM1\|*\|* ]] || continue
     r=${line#SM1|}; f=${r#*|}; f=${f%%|*}             # sender id (same rules as the python hub)
     if [[ $r == AUTH\|srv\|* ]]; then
-      [[ -n $SHELLMMO_HUB_TOKEN && ${r#AUTH|srv|} == "$SHELLMMO_HUB_TOKEN" ]] && me=srv
+      [[ -n $SHELLMMO_HUB_TOKEN && ${r#AUTH|srv|} == "$SHELLMMO_HUB_TOKEN" ]] && { me=srv; printf '%s\n' srv > "$mf"; }
       continue
     fi
-    [[ -z $me && $f != srv ]] && me=$f
+    [[ -z $me && $f != srv ]] && { me=$f; printf '%s\n' "$me" > "$mf"; }
     [[ $f == "$me" ]] || continue
+    case ${r%%|*} in
+      ALOAD|ASAVE) [[ $me == srv ]] && continue ;;
+      AR??????) [[ $me == srv ]] || continue ;;
+    esac
     printf '%s\n' "$line" >> "$log"
   done
-  kill "$tp" 2>/dev/null
+  pkill -P "$tp" 2>/dev/null; kill "$tp" 2>/dev/null; rm -f "$mf"
 }
 
 die() { echo "shellmmorpg: $*" >&2; exit 1; }
 
-MODE=host NET_HOST=127.0.0.1 NET_PORT=4747 MY_NAME="${SHELLMMO_NAME:-${USER:-hero}}" GFX=${SHELLMMO_GFX:-}
+MODE=host NET_BIND="" NET_HOST=127.0.0.1 NET_PORT=4747 MY_NAME="${SHELLMMO_NAME:-${USER:-hero}}" GFX=${SHELLMMO_GFX:-}
 while (( $# )); do
   case $1 in
     -h|--help) awk 'NR > 2 && !/^#/ { exit } NR > 2 && !/====/ { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
@@ -80,6 +93,14 @@ while (( $# )); do
       MODE=join
       if [[ $2 == *:* && ${2##*:} =~ ^[0-9]+$ ]]; then NET_HOST=${2%:*} NET_PORT=${2##*:}; else NET_HOST=$2; fi
       shift ;;
+    --bind) [[ $2 =~ ^[A-Za-z0-9.:_-]+$ ]] || die "--bind needs an address, e.g. 127.0.0.1"; NET_BIND=$2; shift ;;
+    --ssh)
+      [[ $2 =~ ^[A-Za-z0-9._@-]+(:[0-9]+)?$ ]] || die "--ssh needs [user@]host[:sshport], e.g. --ssh me@play.example.org"
+      command -v ssh >/dev/null 2>&1 || die "--ssh needs the ssh command"
+      ssh_to=${2%%:*} ssh_port=()
+      [[ $2 == *:* ]] && ssh_port=(-p "${2##*:}")
+      ssh_args=(); [[ -n $GFX ]] && ssh_args+=("--$GFX")
+      exec ssh -t "${ssh_port[@]}" "$ssh_to" "${SHELLMMO_REMOTE:-shellmmorpg-play}" "${ssh_args[@]}" ;;
     --name) [[ -n $2 ]] || die "--name needs a value"; MY_NAME=$2; shift ;;
     --ascii) GFX=ascii ;;
     --hd)    GFX=hd ;;
@@ -2566,6 +2587,7 @@ import asyncio, os, sys
 TOKEN = os.environ.get("SHELLMMO_HUB_TOKEN", "").encode()
 MAXBUF = 1 << 20
 clients = set()
+ids = {}          # writer -> bound sender id (b"srv" for the world server)
 async def handle(reader, writer):
     clients.add(writer)
     me = None
@@ -2591,7 +2613,21 @@ async def handle(reader, writer):
                 me = frm
             if frm != me:
                 continue
-            for c in list(clients):
+            ids[writer] = me
+            # private lines: ALOAD/ASAVE (hero data, passwords) go to the world server only,
+            # AR<id> (the server's answer) to that one player only
+            typ = p[1]
+            if typ in (b"ALOAD", b"ASAVE"):
+                if me == b"srv":
+                    continue
+                dest = [c for c in clients if ids.get(c) == b"srv"]
+            elif typ[:2] == b"AR" and len(typ) == 8:
+                if me != b"srv":
+                    continue
+                dest = [c for c in clients if ids.get(c) == typ[2:]]
+            else:
+                dest = list(clients)
+            for c in dest:
                 try:
                     if c.transport.get_write_buffer_size() > MAXBUF:
                         raise ConnectionError("client too slow")
@@ -2603,12 +2639,24 @@ async def handle(reader, writer):
         pass
     finally:
         clients.discard(writer)
+        ids.pop(writer, None)
         try:
             writer.close()
         except Exception:
             pass
+async def watchdog(pid):          # the game that started this hub is gone (kill -9): do not stay behind
+    while True:
+        await asyncio.sleep(2)
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            os._exit(0)
+        except Exception:
+            pass
 async def main():
-    server = await asyncio.start_server(handle, None, int(sys.argv[1]))
+    if len(sys.argv) > 3 and sys.argv[3].isdigit():
+        asyncio.get_running_loop().create_task(watchdog(int(sys.argv[3])))
+    server = await asyncio.start_server(handle, (sys.argv[2] if len(sys.argv) > 2 else None) or None, int(sys.argv[1]))
     async with server:
         await server.serve_forever()
 try:
@@ -2639,19 +2687,19 @@ start_hub() {
   local run=() i
   command -v setsid >/dev/null 2>&1 && run=(setsid)
   case $HUB_TOOL in
-    ncat|nc) "${run[@]}" "$HUB_TOOL" --broker -l "$NET_PORT" </dev/null >/dev/null 2>&1 & ;;
-    python3) "${run[@]}" python3 -I -c "$PY_HUB" "$NET_PORT" </dev/null >/dev/null 2>&1 & ;;
+    ncat|nc) "${run[@]}" "$HUB_TOOL" --broker -l ${NET_BIND:+"$NET_BIND"} "$NET_PORT" </dev/null >/dev/null 2>&1 & ;;
+    python3) "${run[@]}" python3 -I -c "$PY_HUB" "$NET_PORT" "$NET_BIND" "$$" </dev/null >/dev/null 2>&1 & ;;
     socat)
       [[ -n $HUB_DIR ]] || HUB_DIR=$(mktemp -d)
       : > "$HUB_DIR/log"
-      "${run[@]}" socat "TCP-LISTEN:$NET_PORT,reuseaddr,fork" "EXEC:bash $SELF --hub-handler $HUB_DIR/log" \
+      "${run[@]}" socat "TCP-LISTEN:$NET_PORT,reuseaddr,fork${NET_BIND:+,bind=$NET_BIND}" "EXEC:bash $SELF --hub-handler $HUB_DIR/log" \
         </dev/null >/dev/null 2>&1 & ;;
   esac
   HUB_PID=$!
   for (( i = 0; i < 30; i++ )); do
     sleep 0.1
     alive "$HUB_PID" || return 1
-    (exec 3<>"/dev/tcp/127.0.0.1/$NET_PORT") 2>/dev/null && return 0
+    (exec 3<>"/dev/tcp/${NET_BIND:-127.0.0.1}/$NET_PORT") 2>/dev/null && return 0
   done
   return 1
 }
@@ -2844,6 +2892,7 @@ srv_hello() {  # id name
 }
 
 srv_drop() {
+  acc_forget "$1"
   [[ -n ${SP_NAME[$1]} ]] || return
   slog "- ${SP_NAME[$1]} ($1) left"
   srv_pleave "$1"
@@ -3533,6 +3582,9 @@ srv_second() {
   for id in "${!SP_NAME[@]}"; do
     (( NOW - ${SP_SEEN[$id]:-0} > 15000 )) && srv_drop "$id"
   done
+  for id in "${!ACC_NAME[@]}"; do               # logged in but never entered the world (or gone): forget after ten minutes
+    [[ -z ${SP_NAME[$id]} ]] && (( NOW - ${ACC_SEEN[$id]:-0} > 600000 )) && acc_forget "$id"
+  done
   for map in "${!IN_TYPE[@]}"; do
     cnt=0
     for id in "${!SP_NAME[@]}"; do [[ ${SP_MAP[$id]} == "$map" ]] && cnt=$(( cnt + 1 )); done
@@ -3551,6 +3603,15 @@ srv_line() {
   (( ${#line} <= 2048 )) || return
   IFS='|' read -r tag typ from a b c d e f g h i <<< "$line"
   [[ $tag == SM1 && $from =~ ^[0-9a-f]{6}$ ]] || return
+  case $typ in                                        # v6.2: heroes live on the server
+    ALOAD) srv_aload "$from" "$a" "$b" "$c"; return ;;
+    ASAVE) srv_asave "$from" "$a" "$b" "$c"; return ;;
+  esac
+  if (( ACCT_ON )); then                              # nobody plays without logging in, and only as the hero they logged in as
+    [[ -n ${ACC_NAME[$from]} ]] || return
+    ACC_SEEN[$from]=$NOW
+    case $typ in HELLO|POS) [[ ${a//[^A-Za-z0-9_-]/} == "${ACC_NAME[$from]}" ]] || return ;; esac
+  fi
   case $typ in
     HELLO) srv_hello "$from" "$a" ;;
     POS)   # name cls lvl map x y hp maxhp dead sym col
@@ -3585,6 +3646,8 @@ server_main() {
   on_line() { srv_line "$1"; }
   net_lost() { net_up=0; exec 7>&- 2>/dev/null; slog "lost connection to the hub"; }
   load_world
+  ACCT_ON=1; [[ $SHELLMMO_OPEN == 1 ]] && ACCT_ON=0       # SHELLMMO_OPEN=1: no logins (old tests)
+  (( ACCT_ON )) && acc_init
   slog "shellmmorpg world server v$VERSION - map ${MAPW[W]}x${MAPH[W]} - port $NET_PORT"
   NET_HOST=127.0.0.1
   until net_connect; do
@@ -3807,11 +3870,128 @@ inv_win() {
 inv_end() { INV_TOWN=-1 INV_WAVE=0 INV_MONS="" INV_NEXT=$(( NOW + ${SHELLMMO_INV_DELAY:-2400000} + RANDOM % 900000 )); }
 
 # ---------------------------------------------------------------------------
+#  Module 03c - heroes live on the server (v6.2). A client logs in with
+#  ALOAD name password; the server answers privately (AR<id>) with the saved
+#  hero in chunks (DATA) or NONE (a new hero: it is created by the first
+#  ASAVE). ASAVE sends the hero's save text in chunks of at most 1400
+#  characters, newlines written as the unit separator (\x1f).
+#  The hub delivers ALOAD/ASAVE to the world server only and AR<id> to the
+#  player <id> only (python3 and socat hubs).
+# ---------------------------------------------------------------------------
+ACC_DIR="$DATA_DIR/chars" ACCT_ON=0 ACC_HASHER="" ACC_CHUNK=1400 ACC_MAXCH=60 ACC_STALE=8000
+declare -A ACC_NAME=() ACC_NEW=() ACC_PASS=() ACC_BUF=() ACC_NS=() ACC_SEEN=() ACC_FAIL=() ACC_LOCK=() ACC_RATE=() ACC_SVN=() ACC_SVT=()
+US=$'\x1f'
+
+acc_init() {
+  mkdir -p "$ACC_DIR" && chmod 700 "$ACC_DIR" 2>/dev/null
+  if command -v sha256sum >/dev/null 2>&1; then ACC_HASHER="sha256sum"
+  elif command -v shasum >/dev/null 2>&1; then ACC_HASHER="shasum -a 256"
+  else ACC_HASHER="cksum"; fi
+}
+
+acc_hash() {  # salt password -> AH
+  AH=$(printf '%s:%s' "$1" "$2" | $ACC_HASHER 2>/dev/null); AH=${AH%% *}
+  [[ -n $AH ]] || AH=none
+}
+
+valid_pass() { local LC_ALL=C; [[ ${#1} -ge 4 && ${#1} -le 32 && $1 != *[^\ -{}-~]* ]]; }   # printable ASCII, no |
+
+acc_reply() { send "AR$1" srv "${@:2}"; }
+
+acc_valid_text() {  # a hero's save text: version line, KEY=printable lines, sane size
+  local LC_ALL=C line n=0
+  (( ${#1} > 0 && ${#1} <= 60000 )) || return 1
+  [[ $1 == version=2* ]] || return 1
+  while IFS= read -r line; do
+    n=$(( n + 1 ))
+    [[ $line =~ ^[A-Za-z][A-Za-z0-9_]*=[\ -~]*$ ]] || return 1
+  done <<< "$1"
+  (( n <= 400 )) && [[ $1 == *$'\n'CLS=[0-9]* ]]
+}
+
+acc_online() {  # name id -> 0 if somebody else is logged in as that name right now (stale sessions are dropped)
+  local i
+  for i in "${!ACC_NAME[@]}"; do
+    [[ $i != "$2" && ${ACC_NAME[$i],,} == "${1,,}" ]] || continue
+    if (( NOW - ${ACC_SEEN[$i]:-0} > ACC_STALE )); then srv_drop "$i"; acc_forget "$i"; continue; fi
+    return 0
+  done
+  return 1
+}
+
+acc_forget() { unset "ACC_NAME[$1]" "ACC_NEW[$1]" "ACC_PASS[$1]" "ACC_BUF[$1]" "ACC_NS[$1]" "ACC_SEEN[$1]" "ACC_RATE[$1]" "ACC_SVN[$1]" "ACC_SVT[$1]"; }
+
+srv_aload() {  # id name password [keep]
+  local id=$1 name=$2 pw=$3 keep=$4 key salt hsh nm n total i txt chunk
+  [[ $name =~ ^[A-Za-z0-9_-]{1,12}$ ]] || { acc_reply "$id" DENY NAME "Names are 1-12 letters, digits, _ or -."; return; }
+  valid_pass "$pw" || { acc_reply "$id" DENY PASS "The password needs 4-32 characters (not |)."; return; }
+  key=${name,,}
+  (( NOW - ${ACC_RATE[$id]:-0} >= 700 )) || { acc_reply "$id" DENY LOCK "Slow down."; return; }
+  ACC_RATE[$id]=$NOW
+  (( NOW >= ${ACC_LOCK[$key]:-0} )) || { acc_reply "$id" DENY LOCK "Too many wrong passwords - try again in a minute."; return; }
+  if acc_online "$name" "$id"; then acc_reply "$id" DENY ONLINE "$name is already playing (a crashed session times out after 8 seconds)."; return; fi
+  ACC_SEEN[$id]=$NOW
+  if [[ -r $ACC_DIR/$key.pw ]]; then
+    read -r salt hsh nm < "$ACC_DIR/$key.pw"
+    acc_hash "$salt" "$pw"
+    if [[ $AH != "$hsh" ]]; then
+      ACC_FAIL[$key]=$(( ${ACC_FAIL[$key]:-0} + 1 ))
+      (( ACC_FAIL[$key] >= 5 )) && { ACC_LOCK[$key]=$(( NOW + 60000 )) ACC_FAIL[$key]=0; slog "! too many wrong passwords for $name ($id)"; }
+      acc_reply "$id" DENY PASS "Wrong password."; return
+    fi
+    ACC_FAIL[$key]=0
+    [[ $nm == "$name" ]] || { acc_reply "$id" DENY NAME "That hero is called $nm."; return; }
+    ACC_NAME[$id]=$name; unset "ACC_NEW[$id]" "ACC_PASS[$id]"
+    slog "login: $name ($id)"
+    if [[ $keep == keep ]]; then acc_reply "$id" OK; return; fi
+    if [[ -r $ACC_DIR/$key.char ]]; then
+      txt=$(<"$ACC_DIR/$key.char"); txt=${txt//$'\n'/$US}
+      total=$(( (${#txt} + ACC_CHUNK - 1) / ACC_CHUNK ))
+      for (( n = 1; n <= total; n++ )); do acc_reply "$id" DATA "$n" "$total" "${txt:(n-1)*ACC_CHUNK:ACC_CHUNK}"; done
+      return
+    fi
+    ACC_NEW[$id]=0                               # the password exists but the hero never got saved: create it
+    acc_reply "$id" NONE; return
+  fi
+  ACC_NAME[$id]=$name ACC_NEW[$id]=1 ACC_PASS[$id]=$pw
+  slog "new hero: $name ($id)"
+  acc_reply "$id" NONE
+}
+
+srv_asave() {  # id n total chunk
+  local id=$1 n=$2 total=$3 chunk=$4 key text salt tmp
+  [[ -n ${ACC_NAME[$id]} ]] || return
+  isnum "$n" && isnum "$total" && (( n >= 1 && n <= total && total <= ACC_MAXCH && ${#chunk} <= ACC_CHUNK + 20 )) || return
+  local LC_ALL=C
+  [[ $chunk == *[^\ -~"$US"]* ]] && return
+  ACC_SEEN[$id]=$NOW
+  if (( n == 1 )); then ACC_BUF[$id]=$chunk ACC_NS[$id]=1
+  elif (( ${ACC_NS[$id]:-0} == n - 1 )); then ACC_BUF[$id]+=$chunk ACC_NS[$id]=$n
+  else unset "ACC_BUF[$id]" "ACC_NS[$id]"; return; fi
+  (( n == total )) || return
+  text=${ACC_BUF[$id]//$US/$'\n'}; unset "ACC_BUF[$id]" "ACC_NS[$id]"
+  if (( NOW - ${ACC_SVT[$id]:-0} > 10000 )); then ACC_SVT[$id]=$NOW ACC_SVN[$id]=0; fi
+  (( ++ACC_SVN[$id] <= 30 )) || { acc_reply "$id" BAD "saving too often"; return; }
+  acc_valid_text "$text" || { acc_reply "$id" BAD "not a hero"; slog "! bad save from ${ACC_NAME[$id]} ($id)"; return; }
+  key=${ACC_NAME[$id],,}
+  if [[ -n ${ACC_NEW[$id]} && ! -r $ACC_DIR/$key.pw ]]; then
+    printf -v salt '%04x%04x%04x' $RANDOM $RANDOM $RANDOM
+    acc_hash "$salt" "${ACC_PASS[$id]}"
+    printf '%s %s %s\n' "$salt" "$AH" "${ACC_NAME[$id]}" > "$ACC_DIR/$key.pw.tmp" && mv -f "$ACC_DIR/$key.pw.tmp" "$ACC_DIR/$key.pw" && chmod 600 "$ACC_DIR/$key.pw"
+  fi
+  [[ -r $ACC_DIR/$key.pw ]] || { acc_reply "$id" BAD "no such hero"; return; }
+  unset "ACC_NEW[$id]" "ACC_PASS[$id]"
+  tmp="$ACC_DIR/$key.char.tmp"
+  if printf '%s\n' "$text" > "$tmp" && mv -f "$tmp" "$ACC_DIR/$key.char"; then acc_reply "$id" ACK
+  else acc_reply "$id" BAD "the server could not write"; slog "! cannot write $ACC_DIR/$key.char"; fi
+}
+
+# ---------------------------------------------------------------------------
 #  Module 04 - client: character (save/load), combat, skills, items, NPCs,
 #  shops, quests, parties and the handlers for everything the network sends
 # ---------------------------------------------------------------------------
 declare -A OP_NAME=() OP_MAP=() OP_X=() OP_Y=() OP_CLS=() OP_LVL=() OP_HP=() OP_MAX=() OP_DEAD=() OP_SEEN=()
-declare -A OP_SYM=() OP_COL=() OP_SAY=() OP_SAYT=() OP_WANTED=() CM_POS=() EXPL=() ATK_NPC=() GLY=()
+declare -A OP_MNT=() OP_SYM=() OP_COL=() OP_SAY=() OP_SAYT=() OP_WANTED=() CM_POS=() EXPL=() ATK_NPC=() GLY=()
 CM_T=() CM_X=() CM_Y=() CM_HP=() CM_MAX=()
 LOG_T=() LOG_C=() CHL_T=() CHL_C=() FX_X=() FX_Y=() FX_K=() FX_E=() INV=() QUESTS=() OFFERS=() PQ_CODES=()
 PARTY_IDS=() SKCD=(0 0 0) DOT_M=() DOT_D=() DOT_N=() DOT_T=()
@@ -3959,37 +4139,47 @@ new_char() {
   calc_stats; HP=$MAXHP MP=$MAXMP
 }
 
+char_text() {   # the hero as save text (what is stored: a file in tests, on the server in the game)
+  local k
+  echo "version=2"
+  for k in "${CHAR_VARS[@]}"; do echo "$k=${!k}"; done
+  echo "SYM=$SYM"
+  echo "EXPW=$EXPW"
+  echo "SEEN=$SEEN"
+  echo "WAYS=$WAYS"
+  echo "INV=${INV[*]}"
+  echo "BAGEQ=${BAGEQ[*]}"
+  echo "BANK=${BANK[*]}"
+  echo "BANKM=${BANKM[*]}"
+  echo "QUESTS=${QUESTS[*]}"
+  echo "PROF=${PROF_LV[0]} ${PROF_XP[0]} ${PROF_LV[1]} ${PROF_XP[1]} ${PROF_LV[2]} ${PROF_XP[2]}"
+  echo "MATS=${MATS[*]}"
+  echo "TAL=$TAL"
+  echo "QLS=$QLS"
+  echo "QLP=${QLP[*]}"
+  echo "QLC=$QLC"
+  echo "REP=${REP[*]}"
+  v45_save
+  if (( CHAR_REMOTE )); then echo "SCI=${SC_ITEMS[*]}"; echo "SCG=$SC_G"; echo "SCM=${SC_M[*]}"; fi
+}
+
 save_char() {
-  local k tmp="$CHAR_FILE.tmp" IFS=$' \t\n'   # traps can fire inside "IFS= read" - never join with empty IFS
+  local tmp="$CHAR_FILE.tmp" IFS=$' \t\n' text   # traps can fire inside "IFS= read" - never join with empty IFS
   [[ -n $CLS ]] || return
   if [[ $CUR_MAP == W ]]; then WX=$PX WY=$PY; fi
   ALLYN=$(( ALLY + 1 ))
-  {
-    echo "version=2"
-    for k in "${CHAR_VARS[@]}"; do echo "$k=${!k}"; done
-    echo "SYM=$SYM"
-    echo "EXPW=$EXPW"
-    echo "SEEN=$SEEN"
-    echo "WAYS=$WAYS"
-    echo "INV=${INV[*]}"
-    echo "BAGEQ=${BAGEQ[*]}"
-    echo "BANK=${BANK[*]}"
-    echo "BANKM=${BANKM[*]}"
-    echo "QUESTS=${QUESTS[*]}"
-    echo "PROF=${PROF_LV[0]} ${PROF_XP[0]} ${PROF_LV[1]} ${PROF_XP[1]} ${PROF_LV[2]} ${PROF_XP[2]}"
-    echo "MATS=${MATS[*]}"
-    echo "TAL=$TAL"
-    echo "QLS=$QLS"
-    echo "QLP=${QLP[*]}"
-    echo "QLC=$QLC"
-    echo "REP=${REP[*]}"
-    v45_save
-  } > "$tmp" 2>/dev/null && mv -f "$tmp" "$CHAR_FILE"
+  if (( CHAR_REMOTE )); then                                # v6.2: heroes live on the server
+    if (( net_up )); then text=$(char_text); acct_send_save "$text" && SAVE_LOST=0 || SAVE_LOST=1; else SAVE_LOST=1; fi
+    return
+  fi
+  char_text > "$tmp" 2>/dev/null && mv -f "$tmp" "$CHAR_FILE"
 }
 
 load_char() {
-  [[ -r $CHAR_FILE ]] || return 1
-  local k v x ok=0
+  local k v x ok=0 text
+  if (( CHAR_REMOTE )); then text=$CHAR_TEXT; [[ -n $text ]] || return 1
+  else [[ -r $CHAR_FILE ]] || return 1; text=$(<"$CHAR_FILE"); fi
+  SC_ITEMS=() SC_G=0 SC_M=(); for (( x = 0; x < NMAT; x++ )); do SC_M[x]=0; done
   CLS="" EQW="" EQA="" EQO="" EQH="" EQJ="" INV=() QUESTS=() SYM="@" COLR="" EXPW="" SEEN="" WAYS=""
   POT_GH=0 POT_GM=0 EL_STR=0 EL_IRON=0 EL_SWIFT=0 SCROLL=0 BREW=0 BAGS=10 BAGEQ=(- - -) BANK=() BANKG=0 BANKCAP=30
   BANKM=(); for (( x = 0; x < NMAT; x++ )); do BANKM[x]=0; done
@@ -4022,9 +4212,12 @@ load_char() {
       MATS)   x=0; for k in $v; do [[ $k =~ ^[0-9]{1,5}$ ]] && (( x < NMAT )) && MATS[x]=$(( 10#$k )); x=$(( x + 1 )); done ;;
       CLS|LVL|XP|GOLD|HP|MP|POT_H|POT_M|POT_GH|POT_GM|EL_STR|EL_IRON|EL_SWIFT|SCROLL|BREW|WX|WY|KILLS|DEATHS|COLR|MEAL1|MEAL2|TON_FROST|TON_FIRE|TON_VEIL|BAGS|BANKG|BANKCAP|STORY|STORY_P|STORY_SEEN|ALLYN)
         [[ $v =~ ^[0-9]{1,12}$ ]] && printf -v "$k" '%d' "$(( 10#$v ))" ;;
+      SCI)    SC_ITEMS=(); for x in $v; do valid_item "${x%!}" && SC_ITEMS+=("$x"); done; SC_ITEMS=("${SC_ITEMS[@]:0:SC_CAP}") ;;
+      SCG)    [[ $v =~ ^[0-9]{1,12}$ ]] && SC_G=$(( 10#$v )) ;;
+      SCM)    x=0; for k in $v; do [[ $k =~ ^[0-9]{1,6}$ ]] && (( x < NMAT )) && SC_M[x]=$(( 10#$k )); x=$(( x + 1 )); done ;;
       *) v45_load_kv "$k" "$v" ;;
     esac
-  done < "$CHAR_FILE"
+  done <<< "$text"
   (( ok )) && [[ $CLS =~ ^[0-9]$ ]] && (( CLS < NCLS )) || return 1
   (( LVL >= 1 && LVL <= 50 )) || LVL=1
   if [[ -z $COLR ]] || (( COLR >= ${#P_COLC[@]} )); then name_color "$MY_NAME"; COLR=$NCI; fi
@@ -5139,7 +5332,7 @@ send_pos() {
 op_del() {
   unset "OP_NAME[$1]" "OP_MAP[$1]" "OP_X[$1]" "OP_Y[$1]" "OP_CLS[$1]" "OP_LVL[$1]" "OP_HP[$1]" "OP_MAX[$1]" \
         "OP_DEAD[$1]" "OP_SEEN[$1]" "OP_SYM[$1]" "OP_COL[$1]" "OP_SAY[$1]" "OP_SAYT[$1]" "OP_WANTED[$1]" "GLY[p$1]" \
-        "OP_ALY[$1]" "OP_AX[$1]" "OP_AY[$1]"
+        "OP_ALY[$1]" "OP_AX[$1]" "OP_AY[$1]" "OP_MNT[$1]" "GLYH[p$1]"
   MAP_DIRTY=1
 }
 
@@ -5160,6 +5353,10 @@ valid_quest() {  # format + range check (K: monster type, D: dungeon, T: known N
 cli_srv() {  # typ fields...
   local typ=$1 a=$2 b=$3 c=$4 d=$5 e=$6 f=$7 g=$8 h=$9 x n old new q list=()
   case $typ in
+    "AR$MY_ID") case $a in
+                  ACK) acct_acked ;;
+                  BAD) ACK_PEND=0; logm "The server did not accept your save: $b" "$K_HURT" ;;
+                esac ;;
     MON)  [[ $a == "$CUR_MAP" ]] && num "$b" && num "$c" && num "$d" && num "$e" && num "$f" && num "$g" || return
           (( c < NM )) || return
           [[ ${SEEN:c:1} == 0 ]] && SEEN="${SEEN:0:c}1${SEEN:c+1}"
@@ -8429,7 +8626,7 @@ choose_class() {
     (( rows >= 12 + NCLS * 2 )) && printf '                   \e[38;5;245mHP %d+%d/lvl  MP %d+%d/lvl  %s / %s / %s\e[0m\n' \
       "${C_HP0[i]}" "${C_HPL[i]}" "${C_MP0[i]}" "${C_MPL[i]}" "${S_NAME[i*3]}" "${S_NAME[i*3+1]}" "${S_NAME[i*3+2]}"
   done
-  printf '\n   \e[38;5;245mYour character is saved as %s\e[0m\n' "$CHAR_FILE"
+  printf '\n   \e[38;5;245mYour hero is saved on the server, as %s\e[0m\n' "$MY_NAME"
   while :; do
     IFS= read -rsn1 k
     [[ -n $k && $keys == *"$k"* ]] && { k=${keys%%"$k"*}; (( ${#k} < NCLS )) && { new_char "${#k}"; return; }; }
@@ -8472,6 +8669,7 @@ lan_ip() {
 
 cleanup() {
   save_char
+  acct_flush
   (( net_up )) && send BYE "$MY_ID" "$MY_NAME"
   [[ $MODE == host ]] && sleep 0.2
   exec 7>&- 2>/dev/null
@@ -8500,6 +8698,9 @@ client_main() {
     fi
     sleep 0.3
   done
+  [[ $MODE == host ]] && trap 'stop_all' EXIT
+  acct_login                                   # v6.2: your hero lives on the server
+  CHAR_REMOTE=1
   on_line() { cli_line "$1"; }
   net_lost() {
     (( net_up )) || return
@@ -8544,11 +8745,12 @@ client_main() {
       net_poll 300
     elif (( NOW >= next_reconnect )); then
       next_reconnect=$(( NOW + 5000 ))
-      if net_connect; then
+      if net_connect && acct_resume; then
         [[ $CUR_MAP != W ]] && leave_instance quiet
         [[ -n $MY_PARTY ]] && { MY_PARTY="" PARTY_LEADER="" PARTY_IDS=(); pq_to_personal; }
         WANTED_UNTIL=0
         send HELLO "$MY_ID" "$MY_NAME" "$CLS" "$LVL"; send_pos; send SYNC "$MY_ID" W
+        (( SAVE_LOST )) && save_char
         logm "Reconnected to the world." "$K_GOOD"
       fi
     fi
@@ -8574,7 +8776,8 @@ dedicated_main() {
   start_hub || { stop_all; die "could not open port $NET_PORT"; }
   trap 'kill_tree "$HUB_PID"; [[ -n $HUB_DIR ]] && rm -rf "$HUB_DIR"' EXIT
   lan_ip
-  echo "Players join with: ./shellmmorpg.sh --join $LANIP:$NET_PORT   (Ctrl+C stops the server)"
+  if [[ -n $NET_BIND ]]; then echo "Listening on $NET_BIND only. Players: ssh -t user@host shellmmorpg-play   (docs/SERVER.md)"
+  else echo "Players join with: ./shellmmorpg.sh --join $LANIP:$NET_PORT   (Ctrl+C stops the server)"; fi
   server_main
 }
 
@@ -9373,6 +9576,7 @@ bag_buy() {  # B.k -> 1 if there is no room for it
 
 # --- the shared chest (a file every hero on this computer can reach) ------------------
 sc_load() {
+  (( CHAR_REMOTE )) && return 0                      # v6.2: the shared chest is part of your hero, on the server
   local k v x i
   SC_ITEMS=() SC_G=0 SC_M=()
   for (( i = 0; i < NMAT; i++ )); do SC_M[i]=0; done
@@ -9388,6 +9592,7 @@ sc_load() {
 }
 
 sc_save() {
+  (( CHAR_REMOTE )) && return 0                      # (bk_commit saves the hero, chest included)
   local IFS=$' \t\n' tmp="$SC_FILE.tmp.$$"
   mkdir -p "$DATA_DIR" 2>/dev/null
   { echo "ITEMS=${SC_ITEMS[*]}"; echo "GOLD=$SC_G"; echo "MATS=${SC_M[*]}"; } > "$tmp" 2>/dev/null && mv -f "$tmp" "$SC_FILE"
@@ -11090,6 +11295,123 @@ mat_uses() {  # material -> MU (lines): what the crafting tables do with it (v6.
   esac
   (( ${#MU[@]} )) || MU+=("Shops pay ${MAT_VAL[k]}g for it.")
   CRAFT=$sv FWK=$sf FAK=$sa
+}
+
+# ---------------------------------------------------------------------------
+#  Module 04k - your hero lives on the server (v6.2): log in, load, save.
+#  Nothing is stored on the player's computer. See 03c_accounts.sh and
+#  docs/PROTOCOL.md for the messages.
+# ---------------------------------------------------------------------------
+CHAR_REMOTE=0 CHAR_TEXT="" ACC_PASS="" ACK_PEND=0 SAVE_LOST=0 MIGRATE_FILE="" AR_K="" AR_A="" AR_B="" AR_C="" ar_buf=""
+US=$'\x1f'
+
+acct_wait() {  # ms -> waits for one private answer (AR<my id>) into AR_K AR_A AR_B AR_C; 1 = silence, 2 = connection lost
+  local end line rc tag typ from
+  now_ms; end=$(( NOW + $1 ))
+  while now_ms; (( NOW < end )); do
+    IFS= read -r -t 0.2 -u 7 line 2>/dev/null; rc=$?
+    if (( rc == 0 )); then
+      line=$ar_buf$line; ar_buf=""
+      [[ $line == "SM1|AR$MY_ID|srv|"* ]] || continue
+      IFS='|' read -r tag typ from AR_K AR_A AR_B AR_C <<< "$line"
+      return 0
+    elif (( rc > 128 )); then ar_buf+=$line
+    else return 2; fi
+  done
+  return 1
+}
+
+acct_pass_ok() { valid_pass "$1"; }
+
+acct_ask() {  # prompt -> ACC_IN (not echoed)
+  local old=""
+  printf '%s' "$1" >&2
+  [[ -t 0 ]] || die "no terminal to ask for the password - set SHELLMMO_PASS"
+  IFS= read -rs ACC_IN; printf '\n' >&2
+}
+
+acct_login() {  # talks to the world server: loads the hero into CHAR_TEXT ("" = a new hero)
+  local tries=0 n total txt="" again
+  CHAR_TEXT="" ar_buf=""
+  while :; do
+    if [[ -z $ACC_PASS ]]; then
+      if [[ -n $SHELLMMO_PASS ]]; then ACC_PASS=$SHELLMMO_PASS
+      else acct_ask "Password for $MY_NAME: "; ACC_PASS=$ACC_IN; fi
+    fi
+    if ! acct_pass_ok "$ACC_PASS"; then
+      echo "The password needs 4-32 characters (not |)." >&2
+      [[ -n $SHELLMMO_PASS ]] && die "bad SHELLMMO_PASS"
+      ACC_PASS=""; continue
+    fi
+    for (( n = 0; n < 5; n++ )); do                 # the world server may still be starting up
+      send ALOAD "$MY_ID" "$MY_NAME" "$ACC_PASS" || die "lost the connection"
+      acct_wait 3000 && break
+      (( n == 0 )) && echo "Waiting for the world server..." >&2
+    done
+    (( n < 5 )) || die "the world server did not answer - is it running, or older than 6.2?"
+    case $AR_K in
+      NONE)
+        if [[ -z $SHELLMMO_PASS ]]; then
+          echo "New hero: $MY_NAME - this name is free." >&2
+          acct_ask "Repeat the password: "
+          if [[ $ACC_IN != "$ACC_PASS" ]]; then echo "The passwords differ." >&2; ACC_PASS=""; continue; fi
+        fi
+        if [[ -r $CHAR_FILE ]]; then                  # a hero saved on this computer before 6.2: move it to the server
+          CHAR_TEXT=$(<"$CHAR_FILE"); MIGRATE_FILE=$CHAR_FILE
+          echo "Found your old local hero - it moves to the server." >&2
+        fi
+        return 0 ;;
+      DATA)
+        txt=""; n=$AR_A total=$AR_B txt=$AR_C
+        while [[ $n =~ ^[0-9]+$ && $total =~ ^[0-9]+$ ]] && (( n < total )); do
+          acct_wait 5000 || die "the server stopped answering while sending your hero"
+          [[ $AR_K == DATA ]] || continue
+          n=$AR_A total=$AR_B txt+=$AR_C
+        done
+        CHAR_TEXT=${txt//$US/$'\n'}
+        return 0 ;;
+      DENY)
+        echo "Login refused: $AR_B" >&2
+        if [[ $AR_A == PASS && -z $SHELLMMO_PASS ]] && (( ++tries < 3 )); then ACC_PASS=""; continue; fi
+        die "could not log in as $MY_NAME" ;;
+      *) die "unexpected answer from the server ($AR_K)" ;;
+    esac
+  done
+}
+
+acct_resume() {  # after a lost connection: log in again without loading, then store what happened meanwhile
+  send ALOAD "$MY_ID" "$MY_NAME" "$ACC_PASS" keep
+  if acct_wait 5000 && [[ $AR_K == OK ]]; then return 0; fi
+  [[ $AR_K == DENY ]] && logm "Could not log in again: $AR_B" "$K_HURT"
+  net_up=0; exec 7>&- 2>/dev/null
+  return 1
+}
+
+acct_send_save() {  # text on stdin of $1
+  local txt=${1//$'\n'/$US} n total
+  total=$(( (${#txt} + 1399) / 1400 ))
+  (( total >= 1 && total <= 60 )) || { logm "Your hero is too big to save (${#txt} characters)!" "$K_HURT"; return 1; }
+  for (( n = 1; n <= total; n++ )); do
+    send ASAVE "$MY_ID" "$n" "$total" "${txt:(n-1)*1400:1400}" || return 1
+  done
+  ACK_PEND=$(( ACK_PEND + 1 ))
+}
+
+acct_acked() {
+  (( ACK_PEND > 0 )) && ACK_PEND=$(( ACK_PEND - 1 ))
+  if [[ -n $MIGRATE_FILE && -e $MIGRATE_FILE ]]; then
+    mv -f "$MIGRATE_FILE" "$MIGRATE_FILE.moved-to-server" 2>/dev/null && logm "Your old local hero file is now $MIGRATE_FILE.moved-to-server (the server has your hero)." "$K_SYS"
+    MIGRATE_FILE=""
+  fi
+}
+
+acct_flush() {  # on quit: wait (at most 2 s) until the server confirmed our last saves
+  local end
+  (( CHAR_REMOTE && net_up && ACK_PEND > 0 )) || return 0
+  now_ms; end=$(( NOW + 2000 ))
+  while (( ACK_PEND > 0 && NOW < end )); do
+    net_poll 50; (( ACK_PEND > 0 )) && sleep 0.05; now_ms
+  done
 }
 
 # ---------------------------------------------------------------------------

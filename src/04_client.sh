@@ -3,7 +3,7 @@
 #  shops, quests, parties and the handlers for everything the network sends
 # ---------------------------------------------------------------------------
 declare -A OP_NAME=() OP_MAP=() OP_X=() OP_Y=() OP_CLS=() OP_LVL=() OP_HP=() OP_MAX=() OP_DEAD=() OP_SEEN=()
-declare -A OP_SYM=() OP_COL=() OP_SAY=() OP_SAYT=() OP_WANTED=() CM_POS=() EXPL=() ATK_NPC=() GLY=()
+declare -A OP_MNT=() OP_SYM=() OP_COL=() OP_SAY=() OP_SAYT=() OP_WANTED=() CM_POS=() EXPL=() ATK_NPC=() GLY=()
 CM_T=() CM_X=() CM_Y=() CM_HP=() CM_MAX=()
 LOG_T=() LOG_C=() CHL_T=() CHL_C=() FX_X=() FX_Y=() FX_K=() FX_E=() INV=() QUESTS=() OFFERS=() PQ_CODES=()
 PARTY_IDS=() SKCD=(0 0 0) DOT_M=() DOT_D=() DOT_N=() DOT_T=()
@@ -151,37 +151,47 @@ new_char() {
   calc_stats; HP=$MAXHP MP=$MAXMP
 }
 
+char_text() {   # the hero as save text (what is stored: a file in tests, on the server in the game)
+  local k
+  echo "version=2"
+  for k in "${CHAR_VARS[@]}"; do echo "$k=${!k}"; done
+  echo "SYM=$SYM"
+  echo "EXPW=$EXPW"
+  echo "SEEN=$SEEN"
+  echo "WAYS=$WAYS"
+  echo "INV=${INV[*]}"
+  echo "BAGEQ=${BAGEQ[*]}"
+  echo "BANK=${BANK[*]}"
+  echo "BANKM=${BANKM[*]}"
+  echo "QUESTS=${QUESTS[*]}"
+  echo "PROF=${PROF_LV[0]} ${PROF_XP[0]} ${PROF_LV[1]} ${PROF_XP[1]} ${PROF_LV[2]} ${PROF_XP[2]}"
+  echo "MATS=${MATS[*]}"
+  echo "TAL=$TAL"
+  echo "QLS=$QLS"
+  echo "QLP=${QLP[*]}"
+  echo "QLC=$QLC"
+  echo "REP=${REP[*]}"
+  v45_save
+  if (( CHAR_REMOTE )); then echo "SCI=${SC_ITEMS[*]}"; echo "SCG=$SC_G"; echo "SCM=${SC_M[*]}"; fi
+}
+
 save_char() {
-  local k tmp="$CHAR_FILE.tmp" IFS=$' \t\n'   # traps can fire inside "IFS= read" - never join with empty IFS
+  local tmp="$CHAR_FILE.tmp" IFS=$' \t\n' text   # traps can fire inside "IFS= read" - never join with empty IFS
   [[ -n $CLS ]] || return
   if [[ $CUR_MAP == W ]]; then WX=$PX WY=$PY; fi
   ALLYN=$(( ALLY + 1 ))
-  {
-    echo "version=2"
-    for k in "${CHAR_VARS[@]}"; do echo "$k=${!k}"; done
-    echo "SYM=$SYM"
-    echo "EXPW=$EXPW"
-    echo "SEEN=$SEEN"
-    echo "WAYS=$WAYS"
-    echo "INV=${INV[*]}"
-    echo "BAGEQ=${BAGEQ[*]}"
-    echo "BANK=${BANK[*]}"
-    echo "BANKM=${BANKM[*]}"
-    echo "QUESTS=${QUESTS[*]}"
-    echo "PROF=${PROF_LV[0]} ${PROF_XP[0]} ${PROF_LV[1]} ${PROF_XP[1]} ${PROF_LV[2]} ${PROF_XP[2]}"
-    echo "MATS=${MATS[*]}"
-    echo "TAL=$TAL"
-    echo "QLS=$QLS"
-    echo "QLP=${QLP[*]}"
-    echo "QLC=$QLC"
-    echo "REP=${REP[*]}"
-    v45_save
-  } > "$tmp" 2>/dev/null && mv -f "$tmp" "$CHAR_FILE"
+  if (( CHAR_REMOTE )); then                                # v6.2: heroes live on the server
+    if (( net_up )); then text=$(char_text); acct_send_save "$text" && SAVE_LOST=0 || SAVE_LOST=1; else SAVE_LOST=1; fi
+    return
+  fi
+  char_text > "$tmp" 2>/dev/null && mv -f "$tmp" "$CHAR_FILE"
 }
 
 load_char() {
-  [[ -r $CHAR_FILE ]] || return 1
-  local k v x ok=0
+  local k v x ok=0 text
+  if (( CHAR_REMOTE )); then text=$CHAR_TEXT; [[ -n $text ]] || return 1
+  else [[ -r $CHAR_FILE ]] || return 1; text=$(<"$CHAR_FILE"); fi
+  SC_ITEMS=() SC_G=0 SC_M=(); for (( x = 0; x < NMAT; x++ )); do SC_M[x]=0; done
   CLS="" EQW="" EQA="" EQO="" EQH="" EQJ="" INV=() QUESTS=() SYM="@" COLR="" EXPW="" SEEN="" WAYS=""
   POT_GH=0 POT_GM=0 EL_STR=0 EL_IRON=0 EL_SWIFT=0 SCROLL=0 BREW=0 BAGS=10 BAGEQ=(- - -) BANK=() BANKG=0 BANKCAP=30
   BANKM=(); for (( x = 0; x < NMAT; x++ )); do BANKM[x]=0; done
@@ -214,9 +224,12 @@ load_char() {
       MATS)   x=0; for k in $v; do [[ $k =~ ^[0-9]{1,5}$ ]] && (( x < NMAT )) && MATS[x]=$(( 10#$k )); x=$(( x + 1 )); done ;;
       CLS|LVL|XP|GOLD|HP|MP|POT_H|POT_M|POT_GH|POT_GM|EL_STR|EL_IRON|EL_SWIFT|SCROLL|BREW|WX|WY|KILLS|DEATHS|COLR|MEAL1|MEAL2|TON_FROST|TON_FIRE|TON_VEIL|BAGS|BANKG|BANKCAP|STORY|STORY_P|STORY_SEEN|ALLYN)
         [[ $v =~ ^[0-9]{1,12}$ ]] && printf -v "$k" '%d' "$(( 10#$v ))" ;;
+      SCI)    SC_ITEMS=(); for x in $v; do valid_item "${x%!}" && SC_ITEMS+=("$x"); done; SC_ITEMS=("${SC_ITEMS[@]:0:SC_CAP}") ;;
+      SCG)    [[ $v =~ ^[0-9]{1,12}$ ]] && SC_G=$(( 10#$v )) ;;
+      SCM)    x=0; for k in $v; do [[ $k =~ ^[0-9]{1,6}$ ]] && (( x < NMAT )) && SC_M[x]=$(( 10#$k )); x=$(( x + 1 )); done ;;
       *) v45_load_kv "$k" "$v" ;;
     esac
-  done < "$CHAR_FILE"
+  done <<< "$text"
   (( ok )) && [[ $CLS =~ ^[0-9]$ ]] && (( CLS < NCLS )) || return 1
   (( LVL >= 1 && LVL <= 50 )) || LVL=1
   if [[ -z $COLR ]] || (( COLR >= ${#P_COLC[@]} )); then name_color "$MY_NAME"; COLR=$NCI; fi
@@ -1331,7 +1344,7 @@ send_pos() {
 op_del() {
   unset "OP_NAME[$1]" "OP_MAP[$1]" "OP_X[$1]" "OP_Y[$1]" "OP_CLS[$1]" "OP_LVL[$1]" "OP_HP[$1]" "OP_MAX[$1]" \
         "OP_DEAD[$1]" "OP_SEEN[$1]" "OP_SYM[$1]" "OP_COL[$1]" "OP_SAY[$1]" "OP_SAYT[$1]" "OP_WANTED[$1]" "GLY[p$1]" \
-        "OP_ALY[$1]" "OP_AX[$1]" "OP_AY[$1]"
+        "OP_ALY[$1]" "OP_AX[$1]" "OP_AY[$1]" "OP_MNT[$1]" "GLYH[p$1]"
   MAP_DIRTY=1
 }
 
@@ -1352,6 +1365,10 @@ valid_quest() {  # format + range check (K: monster type, D: dungeon, T: known N
 cli_srv() {  # typ fields...
   local typ=$1 a=$2 b=$3 c=$4 d=$5 e=$6 f=$7 g=$8 h=$9 x n old new q list=()
   case $typ in
+    "AR$MY_ID") case $a in
+                  ACK) acct_acked ;;
+                  BAD) ACK_PEND=0; logm "The server did not accept your save: $b" "$K_HURT" ;;
+                esac ;;
     MON)  [[ $a == "$CUR_MAP" ]] && num "$b" && num "$c" && num "$d" && num "$e" && num "$f" && num "$g" || return
           (( c < NM )) || return
           [[ ${SEEN:c:1} == 0 ]] && SEEN="${SEEN:0:c}1${SEEN:c+1}"

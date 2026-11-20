@@ -1050,7 +1050,7 @@ choose_class() {
     (( rows >= 12 + NCLS * 2 )) && printf '                   \e[38;5;245mHP %d+%d/lvl  MP %d+%d/lvl  %s / %s / %s\e[0m\n' \
       "${C_HP0[i]}" "${C_HPL[i]}" "${C_MP0[i]}" "${C_MPL[i]}" "${S_NAME[i*3]}" "${S_NAME[i*3+1]}" "${S_NAME[i*3+2]}"
   done
-  printf '\n   \e[38;5;245mYour character is saved as %s\e[0m\n' "$CHAR_FILE"
+  printf '\n   \e[38;5;245mYour hero is saved on the server, as %s\e[0m\n' "$MY_NAME"
   while :; do
     IFS= read -rsn1 k
     [[ -n $k && $keys == *"$k"* ]] && { k=${keys%%"$k"*}; (( ${#k} < NCLS )) && { new_char "${#k}"; return; }; }
@@ -1093,6 +1093,7 @@ lan_ip() {
 
 cleanup() {
   save_char
+  acct_flush
   (( net_up )) && send BYE "$MY_ID" "$MY_NAME"
   [[ $MODE == host ]] && sleep 0.2
   exec 7>&- 2>/dev/null
@@ -1121,6 +1122,9 @@ client_main() {
     fi
     sleep 0.3
   done
+  [[ $MODE == host ]] && trap 'stop_all' EXIT
+  acct_login                                   # v6.2: your hero lives on the server
+  CHAR_REMOTE=1
   on_line() { cli_line "$1"; }
   net_lost() {
     (( net_up )) || return
@@ -1165,11 +1169,12 @@ client_main() {
       net_poll 300
     elif (( NOW >= next_reconnect )); then
       next_reconnect=$(( NOW + 5000 ))
-      if net_connect; then
+      if net_connect && acct_resume; then
         [[ $CUR_MAP != W ]] && leave_instance quiet
         [[ -n $MY_PARTY ]] && { MY_PARTY="" PARTY_LEADER="" PARTY_IDS=(); pq_to_personal; }
         WANTED_UNTIL=0
         send HELLO "$MY_ID" "$MY_NAME" "$CLS" "$LVL"; send_pos; send SYNC "$MY_ID" W
+        (( SAVE_LOST )) && save_char
         logm "Reconnected to the world." "$K_GOOD"
       fi
     fi
@@ -1195,6 +1200,7 @@ dedicated_main() {
   start_hub || { stop_all; die "could not open port $NET_PORT"; }
   trap 'kill_tree "$HUB_PID"; [[ -n $HUB_DIR ]] && rm -rf "$HUB_DIR"' EXIT
   lan_ip
-  echo "Players join with: ./shellmmorpg.sh --join $LANIP:$NET_PORT   (Ctrl+C stops the server)"
+  if [[ -n $NET_BIND ]]; then echo "Listening on $NET_BIND only. Players: ssh -t user@host shellmmorpg-play   (docs/SERVER.md)"
+  else echo "Players join with: ./shellmmorpg.sh --join $LANIP:$NET_PORT   (Ctrl+C stops the server)"; fi
   server_main
 }

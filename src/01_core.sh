@@ -6,6 +6,8 @@
 #  ./shellmmorpg.sh --join HOST[:PORT]  join a friend's world
 #  ./shellmmorpg.sh --server [PORT]     dedicated server without a player
 #  ./shellmmorpg.sh --port PORT         port to host on (default 4747)
+#  ./shellmmorpg.sh --bind ADDR         listen only on this address (127.0.0.1 behind ssh)
+#  ./shellmmorpg.sh --ssh [USER@]HOST   play on a server over ssh (see deploy/ and docs/SERVER.md)
 #  ./shellmmorpg.sh --name NAME         character name (default: $USER)
 #  ./shellmmorpg.sh --ascii / --hd      classic ASCII or HD emoji graphics ([v] in game)
 #  ./shellmmorpg.sh --help              this help
@@ -32,7 +34,7 @@
 #  This file is built from src/*.sh and world.txt by build.sh - edit those.
 # ============================================================================
 
-VERSION="6.0"
+VERSION="6.2"
 DATA_DIR="${SHELLMMO_DIR:-$HOME/.shellmmorpg}"
 SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
 # string lengths must count characters, not bytes (emoji graphics): make sure we run in a UTF-8 locale
@@ -48,26 +50,37 @@ shopt -u patsub_replacement 2>/dev/null   # "&" in replacements stays literal
 set -f                                   # no globbing on word splits
 
 hub_handler() {   # socat backend: one process per client, relays via a shared log
-  local log=$1 line tp me="" r f
-  tail -n0 -F "$log" 2>/dev/null &
+  local log=$1 line tp me="" r f mf="$1.me.$$"
+  # relay the log to this client - except the private lines meant for others (hero data and passwords
+  # go to the world server only, AR<id> answers to that one player); awk learns who we are from $mf
+  { tail -n0 -F "$log" 2>/dev/null | awk -F'|' -v mf="$mf" '
+      function who() { if (me == "") { getline me < mf; close(mf) } return me }
+      { t = $2
+        if (t == "ALOAD" || t == "ASAVE") { if (who() != "srv") next }
+        else if (substr(t, 1, 2) == "AR" && length(t) == 8) { if (t != "AR" who()) next }
+        print; fflush() }'; } &
   tp=$!
   while IFS= read -r line; do
     (( ${#line} <= 2048 )) && [[ $line == SM1\|*\|* ]] || continue
     r=${line#SM1|}; f=${r#*|}; f=${f%%|*}             # sender id (same rules as the python hub)
     if [[ $r == AUTH\|srv\|* ]]; then
-      [[ -n $SHELLMMO_HUB_TOKEN && ${r#AUTH|srv|} == "$SHELLMMO_HUB_TOKEN" ]] && me=srv
+      [[ -n $SHELLMMO_HUB_TOKEN && ${r#AUTH|srv|} == "$SHELLMMO_HUB_TOKEN" ]] && { me=srv; printf '%s\n' srv > "$mf"; }
       continue
     fi
-    [[ -z $me && $f != srv ]] && me=$f
+    [[ -z $me && $f != srv ]] && { me=$f; printf '%s\n' "$me" > "$mf"; }
     [[ $f == "$me" ]] || continue
+    case ${r%%|*} in
+      ALOAD|ASAVE) [[ $me == srv ]] && continue ;;
+      AR??????) [[ $me == srv ]] || continue ;;
+    esac
     printf '%s\n' "$line" >> "$log"
   done
-  kill "$tp" 2>/dev/null
+  pkill -P "$tp" 2>/dev/null; kill "$tp" 2>/dev/null; rm -f "$mf"
 }
 
 die() { echo "shellmmorpg: $*" >&2; exit 1; }
 
-MODE=host NET_HOST=127.0.0.1 NET_PORT=4747 MY_NAME="${SHELLMMO_NAME:-${USER:-hero}}" GFX=${SHELLMMO_GFX:-}
+MODE=host NET_BIND="" NET_HOST=127.0.0.1 NET_PORT=4747 MY_NAME="${SHELLMMO_NAME:-${USER:-hero}}" GFX=${SHELLMMO_GFX:-}
 while (( $# )); do
   case $1 in
     -h|--help) awk 'NR > 2 && !/^#/ { exit } NR > 2 && !/====/ { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
@@ -80,6 +93,14 @@ while (( $# )); do
       MODE=join
       if [[ $2 == *:* && ${2##*:} =~ ^[0-9]+$ ]]; then NET_HOST=${2%:*} NET_PORT=${2##*:}; else NET_HOST=$2; fi
       shift ;;
+    --bind) [[ $2 =~ ^[A-Za-z0-9.:_-]+$ ]] || die "--bind needs an address, e.g. 127.0.0.1"; NET_BIND=$2; shift ;;
+    --ssh)
+      [[ $2 =~ ^[A-Za-z0-9._@-]+(:[0-9]+)?$ ]] || die "--ssh needs [user@]host[:sshport], e.g. --ssh me@play.example.org"
+      command -v ssh >/dev/null 2>&1 || die "--ssh needs the ssh command"
+      ssh_to=${2%%:*} ssh_port=()
+      [[ $2 == *:* ]] && ssh_port=(-p "${2##*:}")
+      ssh_args=(); [[ -n $GFX ]] && ssh_args+=("--$GFX")
+      exec ssh -t "${ssh_port[@]}" "$ssh_to" "${SHELLMMO_REMOTE:-shellmmorpg-play}" "${ssh_args[@]}" ;;
     --name) [[ -n $2 ]] || die "--name needs a value"; MY_NAME=$2; shift ;;
     --ascii) GFX=ascii ;;
     --hd)    GFX=hd ;;

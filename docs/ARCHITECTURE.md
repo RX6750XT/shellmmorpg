@@ -47,6 +47,8 @@ here-document and the start code:
 | `02_net.sh` | the hubs, starting/stopping them, `net_connect`, `send`, `net_poll` |
 | `03_server.sh` | the world server: spawning, AI (timer wheel), combat on the server side, loot, parties, instances, world bosses, weather, clock, message handler |
 | `03b_server45.sh` | v4.5 server: mythic scaling (`inst_mon`, `myth_scale`), Bolstering, `myth_finish`; the raid boss (`raid_attack`, delayed area blows `aoe_add`/`aoe_tick`), `raid_finish`; invasions (`inv_*`); `srv_loot` |
+| `03c_accounts.sh` | v6.2 server side of heroes: `srv_aload` (login, new heroes, password check, lock-out, one session per hero), `srv_asave` (chunks, shape check, atomic write) |
+| `04k_account.sh` | v6.2 client side: `acct_login`, `acct_resume` (after a lost connection), `acct_send_save`, `acct_flush` (wait for the last save when quitting) |
 | `04_client.sh` | character, save/load, stats, combat, skills, items, shops, quests, NPC talk, party, and the network message handlers (`cli_line`, `cli_srv`) |
 | `04b_life.sh` | day/night and light, weather, world boss client side, fishing, gathering, crafting, trading |
 | `04c_gfx.sh` | HD and ASCII graphics, emoji tables, tile colors, text width helpers (`dispw`, `padr`, `clipl`), the tile-row cache |
@@ -114,9 +116,16 @@ floor); the furniture itself (`RM_F`, `RM_AT["x,y"]`) is drawn on top like
 sprites by `room_overlay`. Everybody in the same room sends `POS` with the
 same map name, so they see each other as in any dungeon.
 
-**Characters** are saved as `key=value` lines in
-`$SHELLMMO_DIR/<name>.char` (written to a temp file, then renamed). Loading
-validates every value - a save file is input like any other.
+**Characters** are `key=value` lines (`char_text`). Since 6.2 they live on
+the world server, in `$SHELLMMO_DIR/chars/<name>.char` next to
+`<name>.pw` (salt + hash of the password): the client logs in with `ALOAD`,
+gets the text back in chunks, and `save_char` sends it with `ASAVE`
+(`04k_account.sh` client side, `03c_accounts.sh` server side). The server
+checks the shape (version line, `KEY=printable` lines, size) and writes a
+temp file, then renames; the client validates every value on load - a save
+is input like any other. In the test library (`CHAR_REMOTE=0`) `save_char`
+and `load_char` use `$CHAR_FILE` instead. The shared chest is part of the
+hero text (`SCI`/`SCG`/`SCM`).
 
 ## Main loops
 
@@ -199,14 +208,17 @@ to 12 KB (ASCII).
 
 | File | |
 | --- | --- |
-| `<name>.char` | a character |
-| `shared.chest` | the chest shared by all heroes on this computer |
+| `chars/<name>.char`, `chars/<name>.pw` | a hero and its password hash - **on the server's computer only** (6.2) |
+| `<name>.char` | (before 6.2) a local hero; moved to the server on first login |
+| `shared.chest` | (before 6.2) the chest shared by the heroes on this computer |
 | `config` | graphics mode (`GFX=hd` / `ascii`) |
 | `server.log` | the world server's log when hosting |
 
 Environment knobs: `SHELLMMO_DIR`, `SHELLMMO_NAME`, `SHELLMMO_GFX`,
 `SHELLMMO_HUB` (python3/socat/ncat), `SHELLMMO_DEBUG` (frame time),
-`SHELLMMO_MAX_INST` (dungeon instances, default 40), and for tests
+`SHELLMMO_MAX_INST` (dungeon instances, default 40), `SHELLMMO_PASS` (the
+hero's password, skips the prompt), and for tests `SHELLMMO_OPEN=1` (a server
+without logins),
 `SHELLMMO_LIB`, `SHELLMMO_WB_DELAY`, `SHELLMMO_CLOCK`, `SHELLMMO_WEATHER_DELAY`.
 
 ## Performance notes

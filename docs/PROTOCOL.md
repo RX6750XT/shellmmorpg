@@ -20,7 +20,7 @@ SM1|TYPE|from|field|field|...
 | Type | Fields | Meaning |
 | --- | --- | --- |
 | `HELLO` | name cls lvl | I joined (the server answers with the world state) |
-| `POS` | name cls lvl map x y hp maxhp dead sym color ally ax ay [mount] | where I am - sent on every step, at least every 2 s. `map` is `W` or `D<n>`, `ally` -1 or the ally I walk with at `ax,ay`, `mount` `-` or the mount I ride (v4.5) |
+| `POS` | name cls lvl map x y hp maxhp dead sym color ally ax ay [mount] | where I am - sent on every step, at least every 2 s. `map` is `W`, `D<n>` or (v5.0) `H<n>` - a room at the inn, `n` = the owner's id read as hex, written in decimal, `ally` -1 or the ally I walk with at `ax,ay`, `mount` `-` or the mount I ride (v4.5) |
 | `BYE` | | I quit |
 | `CHAT` | name text | says something (chat bubble for those nearby) |
 | `PCHAT` | name text | party chat (only party members show it) |
@@ -34,6 +34,23 @@ SM1|TYPE|from|field|field|...
 | `TREQ` `TACC` `TCAN` | name target-id | trade: ask, accept, cancel |
 | `TOFF` | name target-id seq gold items mats | my current trade offer (`items` = comma list of codes, max 10; `mats` = `k:n,...`) |
 | `TOK` | name target-id their-seq my-seq | I accept the offers as they are now |
+
+## Player → player: rooms at the inn (v5.0)
+
+Visits need no server: the owner's client answers. The owner must be online.
+
+| Type | Fields | Meaning |
+| --- | --- | --- |
+| `RASK` | name | who has a room I may visit? |
+| `RHAS` | name asker-id tier shown found | (owner, only if the door lets the asker in) my room: tier 1-4, things on display, collectables found |
+| `RREQ` | name owner-id | please let me into your room |
+| `ROOM` | name target-id\|`*` tier found displays | (owner) come in: `displays` = comma list, one code or `-` per display slot; `*` = an update for everybody standing in the room; tier 0 = the door closed, everybody out |
+| `RNO` | name asker-id none\|party\|locked | (owner) no: no room / party only / locked |
+| `RSIGN` | name owner-id | I sign your guestbook (counted only while the signer stands in the room) |
+
+An owner answers `RASK`, `RREQ` and `RSIGN` at most once a second per
+player, and only `ROOM` updates from the owner of the room you stand in
+count.
 
 ## Player → world server
 
@@ -90,7 +107,7 @@ All sent with `from` = `srv`; clients act on the ones for their map or id.
 
 - **Items**: `W.kind.tier.rarity` (also `A` armor, `O` offhand, `H` helmet,
   `J` trinket), tier 1-12 (10-12 since v4.0), rarity 0-3; `B.0`-`B.5` bags;
-  `U.0`-`U.41` uniques.
+  `U.0`-`U.45` uniques; `C.0`-`C.79` collectables (v5.0).
 - **Classes** in `HELLO`/`POS`/`WHO`: 0-9 (8 Druid and 9 Monk since v4.0). Old saves may hold `W.tier.rarity` (pre-1.6) - still accepted.
 - **Sockets** (v3.0): gear codes may end in `.` + 2 characters per socket:
   `__` empty or a gem `r s e t a o` + grade `1-3` - `W.6.5.2.e3__` is an

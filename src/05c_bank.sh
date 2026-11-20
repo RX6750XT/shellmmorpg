@@ -79,8 +79,9 @@ sc_save() {
   { echo "ITEMS=${SC_ITEMS[*]}"; echo "GOLD=$SC_G"; echo "MATS=${SC_M[*]}"; } > "$tmp" 2>/dev/null && mv -f "$tmp" "$SC_FILE"
 }
 
-bk_store() {  # BK_TAB -> ST SG SM (variable names) SCAP SNAME
+bk_store() {  # BK_TAB -> ST SG SM (variable names) SCAP SNAME   (tab 2: the chest in your room, v5.0 - no gold)
   if (( BK_TAB == 0 )); then ST=BANK SG=BANKG SM=BANKM SCAP=$BANKCAP SNAME=vault
+  elif (( BK_TAB == 2 )); then ST=ROOMC SG="" SM=ROOMM SCAP=${ROOM_CAP[ROOM_T]:-0} SNAME="room chest"
   else ST=SC_ITEMS SG=SC_G SM=SC_M SCAP=$SC_CAP SNAME="shared chest"; fi
 }
 bk_fresh() { (( BK_TAB == 1 )) && sc_load; bk_store; }            # always work on the newest chest
@@ -88,6 +89,7 @@ bk_commit() { save_char; (( BK_TAB == 1 )) && sc_save; MAP_DIRTY=1; }
 
 bank_open() {
   BK_NPC=$TALK_T BK_INPUT="" BK_SIDE=0 BK_CUR=(0 0) BK_TOP=(0 0)
+  (( BK_TAB == 2 )) && BK_TAB=0                                  # (the room chest is only upstairs)
   (( ${#BANKM[@]} )) || { local i; for (( i = 0; i < NMAT; i++ )); do BANKM[i]=0; done; }
   sc_load; UI=bank MAP_DIRTY=1
 }
@@ -114,7 +116,8 @@ bk_transfer() {
 
 bk_gold() {  # dep|wd amount ("" = all of it)
   local a=${2:-} have
-  bk_fresh; have=${!SG}
+  bk_fresh; [[ -n $SG ]] || { logm "Gold belongs in the vault - any banker keeps it safe."; return; }
+  have=${!SG}
   [[ -n $a ]] && a=$(( 10#$a ))
   if [[ $1 == dep ]]; then
     [[ -z $a ]] && a=$GOLD; (( a > GOLD )) && a=$GOLD; (( a > 0 )) || { logm "You have no gold to put in."; return; }
@@ -163,6 +166,7 @@ bk_sort() {
 
 bk_upgrade() {
   local i cost
+  (( BK_TAB == 2 )) && { logm "A bigger room has a bigger chest - ask any innkeeper [9]."; return; }
   (( BK_TAB == 0 )) || { logm "The shared chest always holds $SC_CAP items."; return; }
   for (( i = 0; i < 3; i++ )); do (( BANKCAP == VAULT_UP[i] )) && break; done
   (( i < 3 )) || { logm "Your vault is as big as it gets ($BANKCAP)."; return; }
@@ -198,11 +202,11 @@ bank_key() {
     LEFT|RIGHT|$'\t'|a|d) BK_SIDE=$(( 1 - BK_SIDE )) ;;
     UP|w) bk_move -1 ;;
     DOWN|s) bk_move 1 ;;
-    1) BK_TAB=0 BK_CUR[1]=0 ;;
-    2) BK_TAB=1 BK_CUR[1]=0; sc_load ;;
+    1) (( BK_TAB == 2 )) || BK_TAB=0 BK_CUR[1]=0 ;;
+    2) (( BK_TAB == 2 )) || { BK_TAB=1 BK_CUR[1]=0; sc_load; } ;;
     ''|$'\r'|' '|e) bk_transfer ;;
-    g) BK_INPUT=dep BK_BUF="" ;;
-    t) BK_INPUT=wd BK_BUF="" ;;
+    g) (( BK_TAB == 2 )) || BK_INPUT=dep BK_BUF="" ;;
+    t) (( BK_TAB == 2 )) || BK_INPUT=wd BK_BUF="" ;;
     m) bk_mats in ;;
     n) bk_mats out ;;
     l) bk_lock ;;
@@ -229,13 +233,18 @@ bk_row() {  # code width -> RC RP (one cell of a column; narrow columns drop the
 }
 
 ui_bank() {
-  local cw H n0 n1 r i li c top lc lp rc rp bg mk side t g nm k carried=0 stored=0 ck=0 sk=0
-  [[ -n ${CM_T[$TALK_MID]} ]] || { UI=""; return; }
+  local cw H n0 n1 r i li c top lc lp rc rp bg mk side t g=0 nm k carried=0 stored=0 ck=0 sk=0
+  if (( BK_TAB == 2 )); then room_mine || { UI=""; return; }
+  else [[ -n ${CM_T[$TALK_MID]} ]] || { UI=""; return; }; fi
   (( BK_TAB == 1 )) && sc_load
   bk_store; local -n st=$ST sm=$SM
-  g=${!SG}
+  [[ -n $SG ]] && g=${!SG}
   cw=$(( (MW - 5) / 2 ))
   # title + tabs
+  if (( BK_TAB == 2 )); then
+    rb; ico 📦; rt " $IC" "1"; rt "YOUR ROOM CHEST" "1;38;5;220"; rt " · ${ROOM_NAME[ROOM_T]}" "38;5;245"; uxs
+    rb; ico 💰; rt " $IC"; rt "carried " "38;5;245"; rt "$GOLD" "1;38;5;220"; rt "   - only for you, in every inn" "38;5;242"; uxs
+  else
   rb; ico 🏦; rt " $IC" "1"; rt "${N_FULL[$BK_NPC]^^}" "1;38;5;220"
   rt " · ${N_HOME[$BK_NPC]:-}" "38;5;245"; rt "   "
   for i in 0 1; do
@@ -249,6 +258,7 @@ ui_bank() {
   rt "   in the $SNAME " "38;5;245"; rt "$g" "1;38;5;220"
   if (( BK_TAB == 0 )); then rt "   - safe when you die" "38;5;242"; else rt "   - every hero on this computer" "38;5;242"; fi
   uxs
+  fi
   t=${BLANK:0:MW}; uix "$K_FRAME${t// /─}$N" "$t"
   # column heads
   rb; rt " YOUR BAGS ${#INV[@]}/$BAGS" "1;38;5;220"; rpad $(( cw + 4 )); rt " ${SNAME^^} ${#st[@]}/$SCAP" "1;38;5;220"
@@ -296,6 +306,7 @@ ui_bank() {
     item_name "$c" "$CLS"; item_icon "$c" "$CLS"; bonus_txt
     rb; rt " "; [[ -n $II ]] && rt "$II "; rt "$INAME" "$ICOL"
     if [[ $IK == B ]]; then rt "  bag, $IVAL slots" "38;5;250"
+    elif [[ $IK == C ]]; then rt "  ${CS_NAME[${CL_SET[IKD]}]}" "38;5;180"
     else
       (( IVAL )) && { if [[ $IK == W ]]; then rt "  +$IVAL dmg" "38;5;250"; else rt "  +$IVAL armor" "38;5;250"; fi; }
       [[ -n $BTX ]] && rt "  $BTX" "38;5;117"
@@ -325,6 +336,7 @@ ui_bank() {
     if (( BK_TAB == 0 )); then
       for (( i = 0; i < 3; i++ )); do (( BANKCAP == VAULT_UP[i] )) && { t="  [u] +10: ${VAULT_COST[i]}g"; break; }; done
     fi
-    ui "  [g/t] gold in/out  [m/n] materials in/out$t  [esc] leave" "$K_SYS"
+    if (( BK_TAB == 2 )); then ui "  [m/n] materials in/out  [esc] leave" "$K_SYS"
+    else ui "  [g/t] gold in/out  [m/n] materials in/out$t  [esc] leave" "$K_SYS"; fi
   fi
 }

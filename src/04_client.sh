@@ -33,8 +33,12 @@ Z_CRYF=$'\e[0;38;5;183m.' Z_CRYS=$'\e[0;1;38;5;141m^' Z_JUNG=$'\e[0;38;5;34m,' Z
 Z_BAD=$'\e[0;38;5;166m.' Z_MESA=$'\e[0;38;5;130m^' Z_VOIDF=$'\e[0;38;5;97m.' Z_CHASM=$'\e[0;38;5;201;48;5;53m~'   # v2.0 lands
 Z_AUT=$'\e[0;38;5;172m.' Z_ATREE=$'\e[0;1;38;5;166mT' Z_MYC=$'\e[0;38;5;139m,' Z_SHROOM=$'\e[0;1;38;5;170mT'          # v4.0 lands
 Z_HGT=$'\e[0;38;5;109m.' Z_CRAG=$'\e[0;1;38;5;67m^' Z_BONE=$'\e[0;38;5;187m.'
-set_palette() {  # dungeon type or -1 for the open world
-  if (( $1 < 0 )); then
+set_palette() {  # dungeon type, -1 for the open world, -2 for a room at the inn (v5.0)
+  Z_EXT=$'\e[0;1;38;5;201m<' Z2_EXT=$'\e[0;48;5;53m🌀'
+  if (( $1 == -2 )); then
+    Z_WALL=$'\e[0;38;5;137m#' Z_FLR=$'\e[0;38;5;94m.' Z_EXT=$'\e[0;1;38;5;180m<'
+    Z2_WALL=$'\e[0;48;5;58m🟫' Z2_FLR=$'\e[0;48;5;94m  ' Z2_EXT=$'\e[0;48;5;94m🚪'
+  elif (( $1 < 0 )); then
     Z_WALL=$'\e[0;38;5;244m#' Z_FLR=$'\e[0;38;5;239m.'
     Z2_WALL=$'\e[0;48;5;94m🧱' Z2_FLR=$'\e[0;48;5;102m  '
   else
@@ -42,6 +46,7 @@ set_palette() {  # dungeon type or -1 for the open world
     Z2_WALL=$'\e[0;48;5;235m'"${D_WE[$1]:-🧱}" Z2_FLR=$'\e[0;'"${D_FLOOR[$1]/38;5/48;5}m  "
     Z2_z=$'\e[0;'"${D_FLOOR[$1]/38;5/48;5}m🦴"
   fi
+  Z_FURN=$Z_FLR Z2_FURN=$Z2_FLR                  # "+": furniture stands here (rooms only), drawn on top
   declare -F tbg_build >/dev/null && tbg_build
   declare -F tiles_init >/dev/null && tiles_init
 }
@@ -59,7 +64,7 @@ colorize1() {   # CZ in place (classic ASCII, 1 column per tile)
   CZ=${CZ//K/$Z_CRYF}; CZ=${CZ//C/$Z_CRYS}; CZ=${CZ//J/$Z_JUNG}; CZ=${CZ//W/$Z_JTREE}
   CZ=${CZ//D/$Z_BAD}; CZ=${CZ//V/$Z_MESA}; CZ=${CZ//E/$Z_VOIDF}; CZ=${CZ//G/$Z_CHASM}
   CZ=${CZ//q/$Z_AUT}; CZ=${CZ//y/$Z_ATREE}; CZ=${CZ//M/$Z_MYC}; CZ=${CZ//U/$Z_SHROOM}
-  CZ=${CZ//H/$Z_HGT}; CZ=${CZ//X/$Z_CRAG}; CZ=${CZ//B/$Z_BONE}
+  CZ=${CZ//H/$Z_HGT}; CZ=${CZ//X/$Z_CRAG}; CZ=${CZ//B/$Z_BONE}; CZ=${CZ//'+'/$Z_FURN}
 }
 
 # glyphs for everything that moves (spliced between colorized terrain segments)
@@ -248,7 +253,7 @@ gain_xp() {
 
 add_item() {  # code
   item_name "$1" "$CLS"
-  if (( ${#INV[@]} >= BAGS )) && [[ -z $IUQ ]]; then        # a unique is too precious to auto-sell: it squeezes in
+  if (( ${#INV[@]} >= BAGS )) && [[ -z $IUQ && $IK != C ]]; then   # a unique (or a collectable) is too precious to auto-sell: it squeezes in
     GOLD=$(( GOLD + ISELL ))
     logm "Bags full - auto-sold $INAME for ${ISELL}g" "$K_LOOT"
   else
@@ -262,6 +267,11 @@ add_item() {  # code
     if [[ $IK == B ]]; then
       item_icon "$1" "$CLS"
       logm "${EMJ[loot]}Loot: $II${II:+ }$INAME - a bag with $IVAL slots! Put it on in [i]." $'\e['"${ICOL}m"
+      return
+    fi
+    if [[ $IK == C ]]; then
+      item_icon "$1" "$CLS"; col_mark "$IKD"
+      logm "${EMJ[loot]}Collectable: $II${II:+ }$INAME (${CS_NAME[${CL_SET[IKD]}]})" $'\e['"${ICOL}m"
       return
     fi
     local lab=dmg nv=$IVAL nm=$INAME col=$ICOL up="" ok=1 cl=$ICLS; [[ $IK != W ]] && lab=armor
@@ -278,10 +288,11 @@ add_item() {  # code
 }
 
 reward() {  # xp gold item mtype
-  local i f done=()
-  gain_xp "$1"; GOLD=$(( GOLD + $2 )); KILLS=$(( KILLS + 1 ))
-  logm "${EMJ[xp]}+$1 XP  ${EMJ[gold]}+$2 gold" "$K_GOOD"
-  ft_add "$PX" $(( PY - 1 )) "+$1xp" $'\e[0;1;38;5;220;48;5;234m'
+  local i f done=() xp=$1
+  (( NOW < REST_UNTIL )) && xp=$(( xp * (100 + REST_PCT) / 100 ))      # v5.0: Well Rested
+  gain_xp "$xp"; GOLD=$(( GOLD + $2 )); KILLS=$(( KILLS + 1 ))
+  logm "${EMJ[xp]}+$xp XP  ${EMJ[gold]}+$2 gold" "$K_GOOD"
+  ft_add "$PX" $(( PY - 1 )) "+${xp}xp" $'\e[0;1;38;5;220;48;5;234m'
   case $3 in
     H) POT_H=$(( POT_H + 1 )); ci h; logm "${EMJ[loot]}Loot: ${CI}Health Potion" "$K_LOOT" ;;
     M) POT_M=$(( POT_M + 1 )); ci m; logm "${EMJ[loot]}Loot: ${CI}Mana Potion" "$K_LOOT" ;;
@@ -928,9 +939,12 @@ leave_instance() {
   for (( y = 0; y < ${MAPH[$old]:-0}; y++ )); do unset "MAPROW[$old:$y]" "EXPL[$old:$y]"; done
   CUR_MAP=W CUR_DT=-1 PX=$WX PY=$WY clear_until=0
   cm_clear; set_palette -1
+  [[ $old == H* ]] && room_left
   send SYNC "$MY_ID" W
-  POS_DIRTY=1 MAP_DIRTY=1
-  [[ $1 == quiet ]] || logm "You climb back into the daylight." "$K_GOOD"
+  POS_DIRTY=1 MAP_DIRTY=1 NEED_FULL=1
+  if [[ $1 != quiet ]]; then
+    if [[ $old == H* ]]; then logm "You go back down to the taproom." "$K_SYS"; else logm "You climb back into the daylight." "$K_GOOD"; fi
+  fi
 }
 
 dungeon_enter() {
@@ -963,6 +977,7 @@ try_move() {  # dx dy
     if hostile "$MID"; then melee "$MID"; else talk_open "$MID"; fi
     next_move=$(( NOW + 150 )); return
   fi
+  if [[ $CUR_MAP == H* && -n ${RM_AT[$nx,$ny]} ]]; then room_use "${RM_AT[$nx,$ny]}"; next_move=$(( NOW + 250 )); return; fi   # v5.0
   tile "$CUR_MAP" "$nx" "$ny"
   case $T in
     Q) qev_board; QSRC=board; [[ ${#OFFERS[@]} -gt 0 && $OFFER_LVL == "$LVL" && $OFFER_SRC == board ]] || gen_offers; UI=quest; MAP_DIRTY=1; return ;;
@@ -1109,7 +1124,7 @@ eq_of() { case $1 in W) EQC=$EQW ;; A) EQC=$EQA ;; O) EQC=$EQO ;; H) EQC=$EQH ;;
 is_junk() {  # code -> 0 if unusable for my class or not better than what I wear there; JS = sell value
   local v b
   item_stats "$1"; JS=$ISELL
-  [[ $1 == *! || $IK == B || -n $IUQ ]] && return 1
+  [[ $1 == *! || $IK == [BC] || -n $IUQ ]] && return 1
   [[ $ICLS == *"$CLS"* ]] || return 0
   v=$IVAL b=$IBV; eq_of "$IK"; [[ -n $EQC ]] || return 1
   item_stats "$EQC"
@@ -1155,6 +1170,11 @@ shop_key() {
       junk_value; (( JUNK )) || { logm "No junk in your bags - everything beats what you wear."; return; }
       for c in "${INV[@]}"; do is_junk "$c" || keep+=("$c"); done
       INV=("${keep[@]}"); GOLD=$(( GOLD + JVAL )); logm "Sold $JUNK junk items for $JVAL gold." "$K_LOOT" ;;
+    c|C)                                                         # v5.0: collectables you already own once
+      [[ $SHOP == @(general|trader|spice) ]] || return
+      col_dupes; (( ${#DUP[@]} )) || { logm "No duplicate collectables in your bags - lock one with [l] to keep it."; return; }
+      for c in "${!INV[@]}"; do [[ " ${DUP[*]} " == *" $c "* ]] || keep+=("${INV[c]}"); done
+      GOLD=$(( GOLD + DUPV )); logm "Sold ${#DUP[@]} duplicate collectables for $DUPV gold." "$K_LOOT"; INV=("${keep[@]}") ;;
     f|F)
       [[ $SHOP == @(general|trader|spice) ]] || return
       fish_value; (( FISHN )) || { logm "You have no fish to sell."; return; }
@@ -1162,8 +1182,8 @@ shop_key() {
       GOLD=$(( GOLD + FISHV )); logm "Sold $FISHN fish for $FISHV gold." "$K_LOOT" ;;
     s|S)
       (( ${#INV[@]} )) || { logm "Nothing to sell."; return; }
-      for c in "${INV[@]}"; do if [[ $c == *! ]]; then keep+=("$c"); else item_stats "$c"; total=$(( total + ISELL )); fi; done
-      (( ${#INV[@]} > ${#keep[@]} )) || { logm "Everything in your bags is locked."; return; }
+      for c in "${INV[@]}"; do if [[ $c == *! || $c == C.* ]]; then keep+=("$c"); else item_stats "$c"; total=$(( total + ISELL )); fi; done
+      (( ${#INV[@]} > ${#keep[@]} )) || { logm "Everything in your bags is locked (or a collectable)."; return; }
       GOLD=$(( GOLD + total )); logm "Sold $(( ${#INV[@]} - ${#keep[@]} )) items for $total gold." "$K_LOOT"; INV=("${keep[@]}") ;;
   esac
 }
@@ -1194,6 +1214,9 @@ talk_key() {
     6) ql_for_npc "$TALK_T" && UI=wares ;;
     7) [[ $role == smith ]] && jewel_open ;;
     8) [[ $role == inn ]] && tal_reset ;;
+    9) [[ $role == inn ]] || return                             # v5.0: rooms upstairs
+       if (( NOW < WANTED_UNTIL )); then TALK_LINE="No rooms for murderers. Out!"; return; fi
+       UI=inn ;;
     3) [[ -n ${N_QK[$TALK_T]}${N_QD[$TALK_T]} ]] || return
        QSRC=$TALK_T
        [[ ${#OFFERS[@]} -gt 0 && $OFFER_LVL == "$LVL" && $OFFER_SRC == "$QSRC" ]] || gen_offers
@@ -1356,7 +1379,7 @@ cli_srv() {  # typ fields...
           fi ;;
     REW)  [[ $a == "$MY_ID" ]] && num "$b" && num "$c" && num "$e" || return
           (( e < NM )) || return
-          reward "$b" "$c" "$d" "$e"; dly_kill "$e" "${f:-0}" ;;
+          reward "$b" "$c" "$d" "$e"; dly_kill "$e" "${f:-0}"; col_kill "$e" "${f:-0}" ;;
     MDONE) [[ $a == "$MY_ID" ]] && num "$b" && num "$c" && num "$d" && num "$e" || return
           (( b <= MYTH_MAX && c <= 2 && e <= 5000 )) && myth_done "$b" "$c" "$d" "$e" ;;
     EVREW) [[ $a == "$MY_ID" ]] && num "$b" && num "$c" && num "$d" || return
@@ -1472,7 +1495,7 @@ cli_line() {
     HELLO) [[ -z ${OP_NAME[$from]} ]] && logm "$nm has entered the world." "$K_SYS"
            OP_NAME[$from]=$nm OP_SEEN[$from]=$NOW ;;
     POS)   # name cls lvl map x y hp max dead sym col ally ax ay|mount
-      [[ $b =~ ^[0-9]$ && $d =~ ^(W|D[0-9]+)$ ]] && (( b < NCLS )) && num "$c" && num "$e" && num "$f" && num "$g" && num "$h" || return
+      [[ $b =~ ^[0-9]$ && $d =~ ^(W|D[0-9]+|H[0-9]{1,8})$ ]] && (( b < NCLS )) && num "$c" && num "$e" && num "$f" && num "$g" && num "$h" || return
       [[ -z ${OP_NAME[$from]} ]] && logm "$nm is here." "$K_SYS"
       valid_sym "$j" || j=@
       if isnum "$k" && (( k < ${#P_COLC[@]} )); then :; else name_color "$nm"; k=$NCI; fi
@@ -1504,5 +1527,6 @@ cli_line() {
            elif [[ $c == I ]] && valid_item "$d"; then logm "$nm hands you something." "$K_LOOT"; add_item "$d"; fi ;;
     FX)    [[ $a == "$CUR_MAP" ]] && add_fx "$b" "$c" ;;
     TREQ|TACC|TOFF|TOK|TCAN) trade_msg "$typ" "$from" "$nm" "$b" "$c" "$d" "$e" "$f" ;;
+    RASK|RHAS|RREQ|ROOM|RNO|RSIGN) room_msg "$typ" "$from" "$nm" "$b" "$c" "$d" "$e" ;;     # v5.0: visiting rooms
   esac
 }

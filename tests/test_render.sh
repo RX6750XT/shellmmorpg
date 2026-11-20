@@ -97,6 +97,25 @@ screens() {
   RIDING=1; UI=""; frame "riding the gryphon"; RIDING=0
   gen_dungeon D17 17 777; enter_instance D17 17 777 2>/dev/null; IN_MK=9 IN_LIM=600000 IN_T0=$(( NOW - 30000 )); UI=""
   frame "mythic +9 clock"; IN_T0=$(( NOW - 700000 )); frame "mythic over time"; IN_MK=0; leave_instance quiet
+  # v5.0: every room (owner and guest), the inn, visiting, a display, the collection book, the guestbook, the room chest
+  CUR_MAP=W PX=88 PY=32; rent_week; ROOM_PAID=$RWK
+  for t in 1 2 3 4; do
+    ROOM_T=$t; v50_fix; ROOMD[0]=C.40 ROOMD[1]=U.2 ROOMD[2]=W.0.12.3.r4__ ROOMD[3]=C.18
+    room_home >/dev/null 2>&1; UI=""; frame "my room $t"; leave_instance quiet
+  done
+  room_go beefed 3 "C.5 - U.2 B.5 C.70"; VIS_OWNER=beefed RM_NCOL=33; UI=""; frame "visiting Mira's Grand Suite"
+  CLK_OFF=$(( DAYLEN / 2 )); frame "a room at night"; CLK_OFF=0; leave_instance quiet
+  TALK_T=23 UI=inn; frame "rooms at the inn"; ROOM_T=0; v50_fix; frame "rooms at the inn, no room yet"; ROOM_T=4; v50_fix
+  VIS_INFO=([beefed]="3 5 40") UI=visit; frame "visiting: who is home"; VIS_INFO=() VIS_T=0; frame "visiting: nobody"
+  ROOMD[0]=C.40 ROOMD[5]=U.2; room_home >/dev/null 2>&1
+  INV+=(C.40 C.77); DSP_I=0 DSP_CUR=2 UI=dsp; frame "a display"; DSP_I=1 UI=dsp; frame "an empty display"
+  CLOG=$(printf '10%.0s' $(seq 40)); for p in 0 1 2 3 4 5 6; do BOOK_PG=$p UI=book; frame "collection book page $p"; done
+  GUESTS="Mira:20400 Bob:20390 Eve:20000"; UI=guest; frame "the guestbook"; GUESTS=""; frame "an empty guestbook"
+  room_chest; ROOMC=(C.3 W.0.5.2 U.7); frame "the room chest"; UI=""; leave_instance quiet
+  INV_TAB=0 INV_CUR=($(( 11 + ${#INV[@]} )) 1 1 0) UI=inv; frame "inventory: a collectable"
+  HELP_PG=3 UI=help; frame "help page 4"; HELP_PG=0
+  REST_UNTIL=$(( NOW + 600000 )) REST_PCT=25 UI=""; frame "well rested"; INV_TAB=1 UI=inv; frame "well rested in the inventory"; REST_UNTIL=0
+  ROOM_T=0; v50_fix
   TITLE=-1 PARA=0 PARA_P="0 0 0 0 0 0" LVL=12; calc_stats
 }
 

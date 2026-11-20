@@ -11,7 +11,7 @@ V45_VARS=(PARA KEYLV MYBEST VALOR MNT_CUR TITLE DCLR RAIDK RAREK INVK DLYK MYDON
 v45_reset() {  # a new hero
   PARA=0 PARA_P="0 0 0 0 0 0" KEYLV=2 MYBEST=0 VALOR=0 MOUNTS="" MNT_CUR=0 RIDING=0 ACHS="" TITLE=-1
   DAILY="" WEEKLY="" DCLR=0 RAIDK=0 RAREK=0 INVK=0 DLYK=0 MYDONE=0 GEMP=0
-  v45_fix
+  v50_reset; v45_fix
 }
 v45_fix() {
   local i
@@ -24,7 +24,7 @@ v45_fix() {
   (( TITLE >= -1 && TITLE < NACH )) || TITLE=-1
   (( TITLE >= 0 )) && [[ ${ACHS:TITLE:1} != 1 ]] && TITLE=-1
   for i in "${!PROF_LV[@]}"; do (( PROF_LV[i] <= PROF_MAX )) || PROF_LV[i]=$PROF_MAX; done
-  dly_fix
+  dly_fix; v50_fix
 }
 v45_load_kv() {  # key value: the lines load_char does not know
   case $1 in
@@ -33,12 +33,14 @@ v45_load_kv() {  # key value: the lines load_char does not know
     DAILY|WEEKLY) [[ $2 =~ ^[0-9]{1,7}(\ [0-9]{1,2}:[0-9]{1,6}:[01]){1,3}$ ]] && printf -v "$1" '%s' "$2" ;;
     PARA|KEYLV|MYBEST|VALOR|MNT_CUR|DCLR|RAIDK|RAREK|INVK|DLYK|MYDONE|GEMP) [[ $2 =~ ^[0-9]{1,9}$ ]] && printf -v "$1" '%d' "$(( 10#$2 ))" ;;
     TITLE) [[ $2 =~ ^-?[0-9]{1,3}$ ]] && TITLE=$2 ;;
+    *) v50_load_kv "$1" "$2" ;;                                 # v5.0: housing and collectables
   esac
 }
 v45_save() {  # the lines save_char adds
   local k
   for k in "${V45_VARS[@]}"; do echo "$k=${!k}"; done
   echo "PARA_P=$PARA_P"; echo "MOUNTS=$MOUNTS"; echo "ACHS=$ACHS"; echo "DAILY=$DAILY"; echo "WEEKLY=$WEEKLY"
+  v50_save
 }
 
 # --- professions: tables instead of index ranges ---------------------------------------------------------
@@ -263,7 +265,7 @@ ach_ok() {  # index -> 0 if earned
     28) n=${EXPW//0/}; (( ${#n} * 100 >= ${#EXPW} * 80 )) ;;
     29) n=${SEEN//0/}; (( ${#n} >= 200 )) ;;
     30) (( GOLD >= 250000 )) ;; 31) (( GEMP )) ;;
-    *) return 1 ;;
+    *) ach_ok50 "$i" ;;                                         # v5.0
   esac
 }
 ach_check() {  # unlock what is earned (cheap: a few tests per achievement)

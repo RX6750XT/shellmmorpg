@@ -135,6 +135,28 @@ look (`Z2_*` in `04c_gfx.sh`, a line in `colorize2`, the background in
 `T2C`/`T2V`, the moonlit sketch in `dark_glyphs`, the grey world-map sketch
 in `paint`), and the legend in `build.sh` and `check_world.py`.
 
+## v5.0: housing and collectables (`src/01f_v50data.sh`)
+
+- **A collectable**: one `cl` line - `set rarity emoji glyph ref "Name"
+  "story"`. The emoji must be 2 columns wide (`tests/test_v50.sh` checks),
+  the glyph one printable ASCII character. `ref` says where it comes from:
+  a dungeon index (set 0), an index into `WB_LIST` (set 1), a region name
+  (set 2), `-` (sets 3 and 4: fishing, gathering) or a chapter count
+  (set 5). Append only - saves store one character per collectable in
+  `CLOG`, and items are `C.<index>`.
+- **A new set**: `CS_NAME CS_E CS_HOW`, then decide in `col_kill`,
+  `col_find` or `col_story` (`src/04i_v50.sh`) when it drops, and add a
+  "complete the set" achievement (`ACH` + `ach_ok50`).
+- **A room layout**: `ROOM_LAY[t]` is the map, rows joined with `/`. `#`
+  wall, `.` floor, one `<` door in the bottom wall, and furniture letters:
+  `B` bed, `C` chest, `D` display (numbered in reading order - keep the
+  old ones where they are, saves fill them by number), `K` bookshelf, `G`
+  guestbook, `F P T L A` decoration. Every room needs `B C K G`; the test
+  checks that everything can be reached from the door.
+- **Furniture**: a letter in `FURN_E` (HD), `FURN_G` (ASCII), `FURN_C`
+  (color) and either `FURN_SAY` (a line when you walk into it) or a case in
+  `room_use`.
+
 ## v4.5: endgame data (`src/01e_v45data.sh`)
 
 - **A material**: append to `MAT_NAME/MAT_VAL/MAT_RARE`, then it gets its

@@ -211,6 +211,7 @@ render_map() {
     (( dx >= 0 && dx < VW && dy >= 0 && dy < VH )) && RI[dy]+="$(( dx * 10 + ${FXP[${FX_K[i]}]:-0} )):1:f${FX_K[i]} "
   done
   [[ $map == W && -n $CW ]] && add_particles
+  [[ $map == H* ]] && room_overlay "$cx0" "$cy0"               # v5.0: the furniture of a room
   if (( DEAD )); then GLY[self]=$'\e[0;38;5;240m'"$SYM" GLYH[self]=$'\e[0;48;5;238m💀'
   elif (( NOW - last_hurt < 180 )); then
     GLY[self]=$'\e[0;1;38;5;231;48;5;196m'"$SYM" GLYH[self]=$'\e[0;48;5;196m'"${CEMO[CLS]}"; MAP_DIRTY=1
@@ -223,7 +224,7 @@ render_map() {
     [[ ${OP_MAP[$p]} == "$map" ]] || continue
     dx=$(( ${OP_X[$p]} - cx0 )) dy=$(( ${OP_Y[$p]} - cy0 ))
     (( dx >= 0 && dx < VW && dy >= 0 && dy < VH )) || continue
-    if [[ $map != W ]]; then cheb $(( ${OP_X[$p]} - PX )) $(( ${OP_Y[$p]} - PY )); (( D <= LRY )) || continue; fi
+    if [[ $map == D* ]]; then cheb $(( ${OP_X[$p]} - PX )) $(( ${OP_Y[$p]} - PY )); (( D <= LRY )) || continue; fi
     if (( ${OP_SAYT[$p]:-0} > NOW )); then
       add_tag "$dx" "$dy" "${OP_SAY[$p]:0:26}" $'\e[0;38;5;16;48;5;254m'
     elif (( TAGS_ON )); then
@@ -265,8 +266,8 @@ render_map() {
     done
   fi
   LITMODE=0 LITR=""
-  if [[ $map != W ]]; then dark=1; update_fog
-  elif (( NR > 0 || WR > 0 )); then LITMODE=1; build_lit "$cx0" "$cy0"; fi
+  if [[ $map == D* ]]; then dark=1; update_fog
+  elif [[ $map == W ]] && (( NR > 0 || WR > 0 )); then LITMODE=1; build_lit "$cx0" "$cy0"; fi
   render_rows
   unset "SCR[m$(( VH - 2 ))]" "SCR[m$(( VH - 3 ))]" "SCR[m$(( VH / 2 ))]" "SCR[m$(( VH / 2 - 5 ))]"   # under the overlays
   out+=$N
@@ -286,6 +287,9 @@ render_header() {
   if [[ $CUR_MAP == W ]]; then
     region_of "$PX" "$PY"
     if [[ $RLVL == safe ]]; then loc="$RNAME ${K_GOOD}(safe)$N"; else loc="$RNAME ${K_SYS}(lvl $RLVL)$N"; fi
+  elif [[ $CUR_MAP == H* ]]; then                                     # v5.0: a room at the inn
+    if [[ $RM_OWNER == "$MY_ID" ]]; then loc=$'\e[38;5;180m'"your ${ROOM_NAME[RM_TIER]}$N"
+    else loc=$'\e[38;5;180m'"${OP_NAME[$RM_OWNER]:-someone}'s ${ROOM_NAME[RM_TIER]}$N"; fi
   else
     loc=$'\e[38;5;203m'"${D_NAME[CUR_DT]}$N"
   fi
@@ -452,7 +456,7 @@ render_input() {
     (( ${#t} > w )) && t=${t: -w}
     l+=$' \e[1;38;5;51msay>'"$N $t"$'\e[5m_\e[0m'
   else
-    t=" [wasd] move [1-3] skills [e/r] potions [u] eat [g] fish/gather [i]nv [x] talents [y] allies [p]rof [m]ap [q]uests [b]easts [c]hat log [v] graphics [enter] chat [?] help"
+    t=" [wasd] move [1-3] skills [e/r] potions [u] eat [g] fish/gather [i]nv [x] talents [y] allies [p]rof [m]ap [q]uests [b]easts [c]hat log [H] collection [v] graphics [enter] chat [?] help"
     l+="${K_SYS}${t:0:COLS-1}$N"
   fi
   emit inp "$l"$'\e[K'
@@ -504,7 +508,11 @@ ui_talk() {
     ui "  [6] Show me the ${FAC_NAME[${QL_FAC[QLN]}]}'s wares" "$K_LOOT"
   fi
   [[ $role == smith ]] && ui "  [7] Set gems into my gear (jewelcrafting)" $'\e[1;38;5;213m'
-  if [[ $role == inn ]]; then tal_reset_cost; ui "  [8] Help me forget my talents ($TRC gold)" "$K_SYS"; fi
+  if [[ $role == inn ]]; then
+    tal_reset_cost; ui "  [8] Help me forget my talents ($TRC gold)" "$K_SYS"
+    if (( ROOM_T )); then ui "  [9] Rooms upstairs - your ${ROOM_NAME[ROOM_T]}, visits" $'\e[1;38;5;180m'
+    else ui "  [9] Rooms upstairs - rent one, or visit a friend" $'\e[1;38;5;180m'; fi
+  fi
   ui ""
   if (( TALK_CONFIRM )); then ui "  Really attack ${N_FULL[$t]}? You will be WANTED. Press [x] again." "$K_HURT"
   else ui "  [x] Attack ${N_FULL[$t]}" "$K_SYS"; fi
@@ -552,12 +560,15 @@ ui_shop() {
   done
   ui ""
   junk_value
-  for code in "${INV[@]}"; do [[ $code == *! ]] && continue; item_stats "$code"; total=$(( total + ISELL )); done
+  for code in "${INV[@]}"; do [[ $code == *! || $code == C.* ]] && continue; item_stats "$code"; total=$(( total + ISELL )); done
   ui "  [j] Sell junk (gear worse than yours: $JUNK items)   +${JVAL}g"
-  local lk=0; for code in "${INV[@]}"; do [[ $code == *! ]] && lk=$(( lk + 1 )); done
-  if (( lk )); then ui "  [s] Sell everything but locked items ($(( ${#INV[@]} - lk )) items)   +${total}g"
+  local lk=0; for code in "${INV[@]}"; do [[ $code == *! || $code == C.* ]] && lk=$(( lk + 1 )); done   # (collectables are never sold)
+  if (( lk )); then ui "  [s] Sell everything but locked items and collectables ($(( ${#INV[@]} - lk )) items)   +${total}g"
   else ui "  [s] Sell everything in your bags (${#INV[@]} items)   +${total}g"; fi
-  if [[ $SHOP == @(general|trader|spice) ]]; then fish_value; ui "  [f] Sell all your fish ($FISHN)   +${FISHV}g"; fi
+  if [[ $SHOP == @(general|trader|spice) ]]; then
+    fish_value; ui "  [f] Sell all your fish ($FISHN)   +${FISHV}g"
+    col_dupes; (( ${#DUP[@]} )) && ui "  [c] Sell duplicate collectables (${#DUP[@]})   +${DUPV}g"
+  fi
   ui ""
   [[ $SHOP == smith ]] && ui "  Reforging upgrades the rarity of what you WEAR. It can fail." "$K_SYS"
   ui "  [esc] leave" "$K_SYS"
@@ -666,12 +677,12 @@ ui_way() {
 HELP_PG=0
 ui_help() {  # two pages: [<] [>] turn
   if (( HELP_PG == 0 )); then
-  ui "  CONTROLS                                          page 1/3  [>] more" "$B"
+  ui "  CONTROLS                                          page 1/4  [>] more" "$B"
   ui "  w a s d / arrows / h j k l   walk - walk into foes to hit"
   ui "  walk into an NPC to talk  -  f / space attack next to you"
   ui "  1 2 3 skills   e / r potions   u eat   i inventory   y allies"
   ui "  x talents  g fish / gather  p professions  m map  z ride  o achievements"
-  ui "  q quests, questlines, reputation   b bestiary   c chat log"
+  ui "  q quests, questlines, reputation  b bestiary  c chat log  H collection"
   ui "  v graphics   Q quit   enter chat - /p party  /w name msg"
   ui "  /invite /accept /leave /trade name /give name gold|#item /who"
   ui "  THE WORLD" "$B"
@@ -686,7 +697,7 @@ ui_help() {  # two pages: [<] [>] turn
   ui "  Bankers (B): your vault + a chest shared by all your heroes."
   ui "  [esc] close" "$K_SYS"
   elif (( HELP_PG == 1 )); then
-  ui "  DEEPER                                       page 2/3  [<] [>] more" "$B"
+  ui "  DEEPER                                       page 2/4  [<] [>] more" "$B"
   ui "  Talents [x]: a point every level, three trees per class, a"
   ui "  capstone at 10 points in a tree. Forget them at any inn."
   ui "  Elements: skills deal fire, frost, poison, shadow, holy or arcane"
@@ -703,8 +714,8 @@ ui_help() {  # two pages: [<] [>] turn
   ui "  their quartermaster [6] sells socketed gear and a unique."
   ui "  Quests now also ask you to collect, deliver, scout and hunt bounties."
   ui "  [esc] close   [>] endgame" "$K_SYS"
-  else
-  ui "  ENDGAME                                           page 3/3  [<] back" "$B"
+  elif (( HELP_PG == 2 )); then
+  ui "  ENDGAME                                      page 3/4  [<] [>] more" "$B"
   ui "  Mythic: at level 40 every dungeon gate asks: normal or mythic? Foes are"
   ui "  level 40 and stronger with every key level (+2 to +20); weekly affixes;"
   ui "  beat the clock and your key rises. Pays epic+ gear, perfect gems, valor."
@@ -717,6 +728,20 @@ ui_help() {  # two pages: [<] [>] turn
   ui "  Mounts: Hilda sells horses in Hearthmoor. [z] ride, [Z] choose a mount."
   ui "  Achievements and titles: [o]. Professions go to 40; new ore, herbs, fish."
   ui "  Perfect gems: combine three flawless ones at any smith."
+  ui "  [esc] close   [>] your home" "$K_SYS"
+  else
+  ui "  A HOME OF YOUR OWN                                page 4/4  [<] back" "$B"
+  ui "  Every innkeeper rents rooms upstairs [9]: four sizes, a weekly rent, and"
+  ui "  the same room waits for you at every inn. Walk into the furniture:"
+  ui "  the bed makes you Well Rested (more XP from fights for 30 minutes),"
+  ui "  the chest stores items and materials, displays show off your finds,"
+  ui "  the bookshelf opens your collection book, visitors sign the guestbook."
+  ui "  Collectables: 80 of them in six sets - boss trophies, world boss"
+  ui "  trophies, a curio for every land, odd things from fishing and gathering,"
+  ui "  relics of the story. [H] shows what you have found and where the rest is."
+  ui "  Visits: [9] then [v] - your friends must be online. Your door decides"
+  ui "  who may come in: nobody, your party or everybody."
+  ui "  Shops buy collectables you have twice [c]. Lock one [l] to keep it."
   ui "  [esc] close" "$K_SYS"
   fi
 }
@@ -856,6 +881,7 @@ render_ui() {   # panels use every column of the frame, the world map is drawn i
     allies) ui_allies ;; allyshop) ui_allyshop ;; story) ui_story ;;
     talents) if (( TL_PAGE )); then ui_paragon; else ui_talents; fi ;; jewel) ui_jewel ;; wares) ui_wares ;; qchoice) ui_qchoice ;;
     dgate) ui_dgate ;; stable) ui_stable ;; valor) ui_valor ;; ach) ui_ach ;;
+    inn) ui_inn ;; visit) ui_visit ;; dsp) ui_dsp ;; book) ui_book ;; guest) ui_guest ;;
   esac
   [[ -n $UI ]] || { MAP_DIRTY=1; return; }
   for (( r = 0; r < VH; r++ )); do
@@ -930,7 +956,7 @@ handle_key() {
       quest) quest_key "$k" ;;
       map)   wm_key "$k"; [[ -z $UI ]] && NEED_FULL=1 ;;
       way)   [[ $k == [1-9] ]] && way_travel $(( k - 1 )); [[ $k == 0 ]] && way_travel 9 ;;
-      help)  case $k in '?') UI="" ;; RIGHT|'>'|.|d|l|' ') (( HELP_PG < 2 )) && HELP_PG=$(( HELP_PG + 1 )) ;; LEFT|'<'|,|a|h) (( HELP_PG > 0 )) && HELP_PG=$(( HELP_PG - 1 )) ;; esac ;;
+      help)  case $k in '?') UI="" ;; RIGHT|'>'|.|d|l|' ') (( HELP_PG < 3 )) && HELP_PG=$(( HELP_PG + 1 )) ;; LEFT|'<'|,|a|h) (( HELP_PG > 0 )) && HELP_PG=$(( HELP_PG - 1 )) ;; esac ;;
       beasts)  case $k in
                  b) UI="" ;;
                  RIGHT|'>'|.|d|l|' ') BEAST_PG=$(( BEAST_PG + 1 )) ;;
@@ -949,6 +975,10 @@ handle_key() {
       stable)  stable_key "$k" ;;
       valor)   valor_key "$k" ;;
       ach)     if [[ $k == o ]]; then UI=""; else ach_key "$k"; fi ;;
+      inn)     inn_key "$k" ;;
+      visit)   visit_key "$k" ;;
+      dsp)     dsp_key "$k" ;;
+      book)    if [[ $k == H ]]; then UI=""; else book_key "$k"; fi ;;
       jewel)   jewel_key "$k" ;;
       wares)   wares_key "$k" ;;
       qchoice) case $k in 1|a) ql_choose a ;; 2|b) ql_choose b ;; esac ;;
@@ -982,6 +1012,7 @@ handle_key() {
     z)         mount_toggle ;;
     Z)         STABLE_SRC=keys UI=stable MAP_DIRTY=1 ;;
     o)         UI=ach MAP_DIRTY=1 ;;
+    H)         BOOK_PG=0 UI=book MAP_DIRTY=1 ;;
     '?')       UI=help MAP_DIRTY=1 ;;
     ''|$'\r'|t) CHATTING=1 CHAT_BUF="" ;;
     /)         CHATTING=1 CHAT_BUF="/" ;;
@@ -995,10 +1026,10 @@ regen() {
   trade_tick
   (( DEAD )) && return
   weather_hazard
-  v3_tick; v45_tick; (( DEAD )) && return
+  v3_tick; v45_tick; v50_tick; (( DEAD )) && return
   rh=$(( MAXHP / 100 + 1 )) rm=$(( MAXMP * 3 / 100 + 1 ))
   (( NOW - last_hurt > 6000 )) && rh=$(( MAXHP * 4 / 100 + 1 ))
-  if [[ $CUR_MAP == W ]] && in_safe_xy "$PX" "$PY"; then rh=$(( rh * 3 )) rm=$(( rm * 2 )); fi
+  if [[ $CUR_MAP == H* ]] || { [[ $CUR_MAP == W ]] && in_safe_xy "$PX" "$PY"; }; then rh=$(( rh * 3 )) rm=$(( rm * 2 )); fi   # towns and rooms
   (( NOW < fed_until )) && { rh=$(( rh * 2 )) rm=$(( rm * 2 )); }
   (( TB_REGEN )) && { rh=$(( rh * (100 + TB_REGEN) / 100 )) rm=$(( rm * (100 + TB_REGEN) / 100 )); }
   if (( HP < MAXHP || MP < MAXMP )); then

@@ -2,8 +2,8 @@
 
 A real-time multiplayer RPG for the terminal, written in pure bash.
 One script, no dependencies for players: walk a 480×200 world with friends,
-fight monsters, clear dungeons, follow a 42-chapter story, trade, craft and
-level up to 40.
+fight monsters, clear dungeons, follow a 42-chapter story, trade, craft,
+level up to 40 - and rent a room at the inn to show off your trophies.
 
 ```
  shellmmorpg | Hearthmoor (safe) | 🌞 08:06 | 84,31 | 2 online | hosting :4747
@@ -56,6 +56,11 @@ for the network hub (joining needs nothing but bash). Characters live in
 - **Professions**: fishing, mining, herbalism; cooking, forging, alchemy
 - **Inventory** with item cards and comparisons, bags in six sizes, a bank
   vault in every town and a chest shared by all your heroes, player trading
+- **A home of your own** (5.0): rent a room at any inn - four sizes, a
+  weekly rent - with a bed (Well Rested: more XP), a chest, displays, a
+  collection book and a guestbook; friends visit while you are online
+- **80 collectables** in six sets: boss and world boss trophies, a curio for
+  every land, finds from fishing and gathering, relics of the story
 - **Two looks**: HD emoji graphics (2 columns per tile) or classic ASCII
 
 ## The project

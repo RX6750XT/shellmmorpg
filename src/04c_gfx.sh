@@ -61,12 +61,12 @@ Z2_l="${E0}48;5;180m🐚" Z2_o="${E0}48;5;180m🦴" Z2_r="${E0}48;5;253m🎄" Z2
 Z2_w="${E0}48;5;137m👣" Z2_x="${E0}48;5;58m🍄" Z2_z="${E0}48;5;236m🦴"
 WAVE="${E0}48;5;25m🌊" CALM="${E0}38;5;39;48;5;25m~ " LAVA_A="${E0}48;5;202m🟧" LAVA_B="${E0}48;5;202m🟥"
 Z2_WAT="${E0}38;5;39;48;5;25m  " Z2_i=$WAVE Z2_j=$CALM Z2_LAVA=$LAVA_A Z2_v=$LAVA_B Z_DARKBG=$'\e[0;48;5;233m'
-T2C=(' ' . , '"' '*' T '~' '^' '#' _ : = % '>' '<' Q O F S s Y N n P I A L R Z b c f g h i j l o r t u v w x z K C J W D V E G a d e k p q y M U H X B)
+T2C=(' ' . , '"' '*' T '~' '^' '#' _ : = % '>' '<' Q O F S s Y N n P I A L R Z b c f g h i j l o r t u v w x z K C J W D V E G a d e k p q y M U H X B '+')
 T2V=(Z2_VOID Z2_DOT Z2_COM Z2_TG Z2_FLW Z2_TREE Z2_WAT Z2_MTN Z2_WALL Z2_FLR Z2_ROAD Z2_BRG Z2_SWP Z2_ENT Z2_EXT
      Z2_QST Z2_FTN Z2_FIRE Z2_SAND Z2_DUNE Z2_CACT Z2_SNOW Z2_DRIFT Z2_PINE Z2_ICE Z2_ASH Z2_LAVA Z2_ROCK Z2_WAY
      Z2_b Z2_c Z2_f Z2_g Z2_h Z2_i Z2_j Z2_l Z2_o Z2_r Z2_t Z2_u Z2_v Z2_w Z2_x Z2_z
      Z2_CRYF Z2_CRYS Z2_JUNG Z2_JTREE Z2_BAD Z2_MESA Z2_VOIDF Z2_CHASM Z2_a Z2_d Z2_e Z2_k Z2_p
-     Z2_AUT Z2_ATREE Z2_MYC Z2_SHROOM Z2_HGT Z2_CRAG Z2_BONE)
+     Z2_AUT Z2_ATREE Z2_MYC Z2_SHROOM Z2_HGT Z2_CRAG Z2_BONE Z2_FURN)
 
 tbg_build() {  # background of every tile, so sprites blend into the ground
   local i z
@@ -92,7 +92,7 @@ colorize2() {  # CZ in place; order matters: chars that appear in a replacement 
   CZ=${CZ//v/$Z2_v}; CZ=${CZ//w/$Z2_w}; CZ=${CZ//x/$Z2_x}; CZ=${CZ//z/$Z2_z}
   CZ=${CZ//a/$Z2_a}; CZ=${CZ//d/$Z2_d}; CZ=${CZ//e/$Z2_e}; CZ=${CZ//k/$Z2_k}; CZ=${CZ//p/$Z2_p}
   CZ=${CZ//q/$Z2_AUT}; CZ=${CZ//y/$Z2_ATREE}; CZ=${CZ//M/$Z2_MYC}; CZ=${CZ//U/$Z2_SHROOM}
-  CZ=${CZ//H/$Z2_HGT}; CZ=${CZ//X/$Z2_CRAG}; CZ=${CZ//B/$Z2_BONE}
+  CZ=${CZ//H/$Z2_HGT}; CZ=${CZ//X/$Z2_CRAG}; CZ=${CZ//B/$Z2_BONE}; CZ=${CZ//'+'/$Z2_FURN}
 }
 
 build_vrow() {  # map y: decorated render copy of one row (sprouts, mushrooms, shells, waves...), deterministic
@@ -148,6 +148,7 @@ item_icon() {  # code cls -> II: [type][material][rarity] (HD) or "" (ASCII)
   item_stats "$1"
   II="$IKE${MAT_E[IT]}${RAR_E[IRR]}"
   [[ $IK == B ]] && II="$IKE${BAG_M[IKD]}${RAR_E[IRR]}"
+  [[ $IK == C ]] && II="$IKE${CS_E[${CL_SET[IKD]}]}${RAR_E[IRR]}"
 }
 ci() { CI=""; (( TW2 )) && CI="${CON_E[$1]:-  } "; }     # consumable icon + space
 plain() {  # colored text -> PL (escape sequences removed)
@@ -272,9 +273,9 @@ dark_glyphs() {  # CZ in place: every tile becomes its plain sketch, TW characte
     CZ=${CZ//' '/'  '}; CZ=${CZ//[._:SNAIKJDEqMHB]/'  '}; CZ=${CZ//[,sn]/' ,'}; CZ=${CZ//'"'/'""'}; CZ=${CZ//'*'/' *'}
     CZ=${CZ//[TPWyU]/'T '}; CZ=${CZ//Y/'Y '}; CZ=${CZ//[~LG]/'~~'}; CZ=${CZ//[\^RCVX]/'^^'}; CZ=${CZ//'#'/'##'}
     CZ=${CZ//'='/'=='}; CZ=${CZ//'%'/'%%'}; CZ=${CZ//'>'/'> '}; CZ=${CZ//'<'/'< '}; CZ=${CZ//Z/'& '}
-    CZ=${CZ//Q/'! '}; CZ=${CZ//O/'o '}; CZ=${CZ//F/'* '}
+    CZ=${CZ//Q/'! '}; CZ=${CZ//O/'o '}; CZ=${CZ//F/'* '}; CZ=${CZ//'+'/'  '}
   else
-    CZ=${CZ//[SNAI_:KJDEqMHB]/.}; CZ=${CZ//[sn]/,}; CZ=${CZ//[PWyU]/T}; CZ=${CZ//[LG]/'~'}; CZ=${CZ//[RCVX]/^}
+    CZ=${CZ//'+'/.}; CZ=${CZ//[SNAI_:KJDEqMHB]/.}; CZ=${CZ//[sn]/,}; CZ=${CZ//[PWyU]/T}; CZ=${CZ//[LG]/'~'}; CZ=${CZ//[RCVX]/^}
     CZ=${CZ//Z/'&'}; CZ=${CZ//Q/'!'}; CZ=${CZ//O/o}; CZ=${CZ//F/'*'}
   fi
 }

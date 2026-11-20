@@ -237,7 +237,7 @@ gather_tick() {
   send HIT "$MY_ID" "$CUR_MAP" "$m" 1 0
   mat_icon "$mat"
   logm "+$n $MI${MI:+ }${MAT_NAME[mat]}   (${PROF_NAME[NPK]} ${PROF_LV[NPK]}, ${MATS[mat]} in your bag)" "$K_LOOT"
-  prof_gain "$NPK" "$xp"; dly_ev gath
+  prof_gain "$NPK" "$xp"; dly_ev gath; col_find 4
 }
 
 fish_stop() { (( FISH_ST )) || return; FISH_ST=0 MAP_DIRTY=1; [[ $1 == quiet ]] || logm "You reel in your line."; }
@@ -314,7 +314,7 @@ fish_strike() {
   if (( FPOS >= FISH_ZS && FPOS < FISH_ZS + FISH_ZW )); then
     MATS[f]=$(( MATS[f] + 1 )); MAT_NEW[f]=$(( ${MAT_NEW[f]:-0} + 1 )); mat_icon "$f"
     if (( rar == 2 )); then logm "You caught a $MI${MI:+ }${MAT_NAME[f]}! A rare catch!" "$K_ANN"; else logm "You caught a $MI${MI:+ }${MAT_NAME[f]}." "$K_LOOT"; fi
-    prof_gain 0 $(( (rar == 0 ? 8 : (rar == 1 ? 13 : 26)) + FISH_REQ )); dly_ev fish
+    prof_gain 0 $(( (rar == 0 ? 8 : (rar == 1 ? 13 : 26)) + FISH_REQ )); dly_ev fish; col_find 3
   else
     logm "Missed! The ${MAT_NAME[f]} slips off the hook." "$K_HURT"
   fi

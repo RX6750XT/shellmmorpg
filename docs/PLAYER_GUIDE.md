@@ -36,6 +36,8 @@ Your character is saved every 30 seconds and when you quit (**Q**), in
 | `q` | quests and the story |
 | `b` | bestiary (`<` `>` turn pages) |
 | `c` | chat log |
+| `H` | collection book (`<` `>` turn pages) |
+| `o` | achievements and titles |
 | `n` | name tags on/off |
 | `v` | HD emoji graphics ↔ classic ASCII |
 | `enter` / `t` | chat, `/` starts a command |
@@ -368,6 +370,58 @@ every town has a **banker** (🏦 / `B`):
 - the **shared chest** is one for all heroes on this computer - the way to
   hand things to your other characters. More vault space can be rented.
 
+## A home of your own
+
+Talk to any innkeeper and press `[9]`: **rooms upstairs**. The Innkeepers'
+Guild keeps the same room for you in every town.
+
+| Room | Level | Move in | Rent / week | Displays | Chest | Well Rested |
+| --- | --- | --- | --- | --- | --- | --- |
+| Attic Room | 5 | 300 | 60 | 4 | 20 | +10% XP |
+| Guest Room | 15 | 2500 | 300 | 8 | 35 | +15% XP |
+| Grand Suite | 25 | 12000 | 1200 | 14 | 50 | +20% XP |
+| Hero's Hall | 35 | 50000 | 4000 | 20 | 70 | +25% XP |
+
+Moving up only pays the difference and takes everything along. The rent
+for the week is paid when you go up - from your purse, or from the vault.
+If you can't pay, the door stays closed until you can; nothing is lost.
+
+Inside, walk into the furniture:
+
+- 🛌 **bed**: sleep, wake up with full HP and MP and **Well Rested** - more
+  experience from fights for 30 minutes (+1% more for every four things on
+  display, up to +10%);
+- 📦 **chest**: like the vault, for items and materials (no gold);
+- 🔲 **displays**: put anything from your bags on them - gear, uniques,
+  bags and above all **collectables**. Walk into one to change it;
+- 📚 **bookshelf**: the collection book; 📒 **guestbook**: who came by.
+
+The door `<` (🚪) leads back down to the taproom.
+
+**Visiting**: `[9]`, then `[v]` asks around who has a room you may enter;
+pick one and the innkeeper takes you up. The owner must be online. Your own
+door (`[d]`) is locked, open for your party (the default) or open for
+everybody. Guests can look at the displays and sign the guestbook.
+
+**Collectables** can't be worn - they are for showing off. There are 80 in
+six sets:
+
+- **Dungeon Trophies** - the boss of every dungeon (and the raid) may leave
+  one behind; the first time it is likely, later less so;
+- **Trophies of the Titans** - the same for every world boss;
+- **Curios of the Realm** - one for every land, rarely found on its
+  creatures (champions and rare elites carry them more often). Not in
+  towns, not in dungeons;
+- **Angler's Treasures** - fished up now and then; **Prospector's Finds** -
+  dug up while mining or picking herbs;
+- **Relics of the Story** - one every sixth chapter.
+
+`H` (or the bookshelf) opens the collection book: every set, what you have
+found, where you keep it, and for the rest a hint where to look. Complete
+sets give achievements and titles. Shops buy collectables you have twice
+(`[c]`); "sell everything" never sells them, and a locked one is always
+kept.
+
 ## Professions
 
 - **Fishing**: stand next to water and press `g`, strike (`space`) when the
@@ -388,6 +442,8 @@ every town has a **banker** (🏦 / `B`):
 - **Trade**: `/trade name` asks, the other side types `/trade yourname`.
   Toggle items with `1`-`0` (`<` `>` for more pages), `g` adds gold, `m`
   materials; both sides press `y`. Any change resets both acceptances.
+- **Visits**: friends can come up to your room at the inn (see *A home of
+  your own*) - while you are online.
 - **Murder**: attacking a townsperson (you are asked twice) makes you
   **WANTED** - guards hunt you until the sentence runs out or you die.
 

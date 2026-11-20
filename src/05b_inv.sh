@@ -99,6 +99,7 @@ active_fx() {  # -> AFX_E AFX_N AFX_T: buffs running right now
   afx "$swift_until" 🐇 "Swiftness"; afx "$buff_until" 📣 "Battle Cry +40% dmg"; afx "$anthem_until" 🎺 "Anthem"
   if (( fed_lvl == 2 )); then afx "$fed_until" 🍲 "Well Fed+ +10% dmg"; else afx "$fed_until" 🍢 "Well Fed"; fi
   afx "$frost_until" 🧊 "Frost Tonic"; afx "$fireward_until" 🧯 "Fire Ward"; afx "$veil_until" 🥽 "Sand Veil"
+  afx "$REST_UNTIL" 😴 "Well Rested +$REST_PCT% XP"                                              # v5.0
 }
 
 # --- tab contents: list rows (LR_*) ------------------------------------------------------------
@@ -155,6 +156,8 @@ inv_rows_gear() {  # width
     if [[ $IK == B ]]; then
       rt "$PADS" "$ICOL"
       bag_gain "$IKD"; if (( BG > 0 )); then padr " ▲$BG" 6; rt "$PADS" "1;38;5;84"; else rt " =    " "38;5;242"; fi
+    elif [[ $IK == C ]]; then                   # v5.0: a collectable - for a display, not for wearing
+      rt "$PADS" "$ICOL"; rt " show " "38;5;180"
     elif (( ok )); then
       rt "$PADS" "$ICOL"
       if (( LR_FAST )); then rt "      "
@@ -302,6 +305,28 @@ inv_card_bag() {  # code worn-slot ("" = in your bags)
   fi
 }
 
+inv_card_col() {  # code: a collectable (v5.0)
+  local c=$1 k s l
+  item_name "$c" "$CLS"; item_icon "$c" "$CLS"; k=$IKD s=${CL_SET[IKD]}
+  wrapt "$INAME" $(( CDW - (TW2 ? 7 : 0) ))
+  rb; [[ -n $II ]] && rt "$II "; rt "${WRL[0]}" "$ICOL"; cc
+  for l in "${WRL[@]:1}"; do rb; rt "$l" "$ICOL"; cc; done
+  ctext "${RAR_NAME[IRR]} collectable · ${CS_NAME[s]}" "38;5;245"
+  ctext "${CL_FL[k]}" "3;38;5;244"
+  cblank
+  rb; rt "FROM" "1;38;5;220"; cc
+  ctext "${CL_SRC[k]}" "38;5;250"
+  cblank
+  col_count
+  rb; ico "${CS_E[s]}"; rt "$IC"; rt "${CLSD[s]}/${CLST[s]} ${CS_NAME[s]} found" "1;38;5;231"; cc
+  rb; ico 💰; rt "$IC"; rt "sells for ${ISELL}g" "38;5;220"; cc
+  [[ $c == *! ]] && { rb; ico 🔒; rt "$IC"; rt "locked - always kept" "38;5;220"; cc; }
+  cblank
+  if (( ROOM_T )); then ctext "Put it on a display in your room: walk into a display there." "38;5;180"
+  else ctext "Rent a room at any inn [9] and put it on a display for all to see." "38;5;180"; fi
+  ctext "Shops buy the ones you have twice [c]." "38;5;245"
+}
+
 inv_card_gear() {  # id
   local id=$1 c worn=0 s nm col k kn t r v bt cl sell ok l uq fl
   case $id in
@@ -312,7 +337,8 @@ inv_card_gear() {  # id
            ctext "Put a bag on with [enter] in your bags. Mara, Garrick, Nadia, Jarl Hrolf and Ser Kael sell them; bosses drop the big ones." "38;5;250"
          fi
          return ;;
-    b:*) c=${INV[${id#b:}]}; [[ $c == B.* ]] && { inv_card_bag "$c" ""; return; } ;;
+    b:*) c=${INV[${id#b:}]}; [[ $c == B.* ]] && { inv_card_bag "$c" ""; return; }
+         [[ $c == C.* ]] && { inv_card_col "$c"; return; } ;;
     e:*) s=${id#e:}; eq_of "$s"; c=$EQC; worn=1 ;;
     *) return ;;
   esac
@@ -618,6 +644,10 @@ inv_equip() {  # bag index [quiet]
   (( i < ${#INV[@]} )) || return 1
   c=${INV[i]}; item_name "$c" "$CLS"
   if [[ $IK == B ]]; then [[ $2 == quiet ]] && return 1; bag_equip "$i"; return; fi
+  if [[ $IK == C ]]; then                                      # v5.0
+    [[ $2 == quiet ]] || logm "You can't wear the $INAME - put it on a display in your room (any innkeeper, [9])." "$K_SYS"
+    return 1
+  fi
   if [[ $ICLS != *"$CLS"* ]]; then
     pl=${IKN}s; [[ $IKN == *s ]] && pl=$IKN
     cls_list "$ICLS"; logm "A ${C_NAME[CLS]} can't use $pl - only $CLT. Sell or trade it." "$K_HURT"; return 1
@@ -672,7 +702,7 @@ inv_sort() { sort_items INV; logm "Bags sorted by ${SORT_NAME[SORT_M]}." "$K_SYS
 
 sort_items() {  # array name: by SORT_M (type, rarity or value) - things you can use first
   local -n sarr=$1
-  local c k u si ord=WAOHJB lines=() l
+  local c k u si ord=WAOHJBC lines=() l
   for c in "${sarr[@]}"; do
     item_stats "$c"; u=1; [[ $ICLS == *"$CLS"* ]] && u=0
     si=${ord%%"$IK"*}; si=${#si}

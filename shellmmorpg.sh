@@ -19,6 +19,8 @@
 #  sockets, 19 questlines with choices and eight factions. Since 4.5: mythic
 #  dungeons, a raid, invasions, valor, mounts, paragon levels, dailies,
 #  achievements and titles - and professions and gems up to level 40.
+#  Since 5.0: a room of your own at every inn - rent it, sleep in it, store
+#  things in it, show off 80 collectables on its displays, invite friends.
 #
 #  Hosting needs python3, socat or ncat (force one: SHELLMMO_HUB=socat).
 #  Joining needs nothing but bash. Characters are saved in ~/.shellmmorpg/
@@ -28,7 +30,7 @@
 #  This file is built from src/*.sh and world.txt by build.sh - edit those.
 # ============================================================================
 
-VERSION="4.5"
+VERSION="5.0"
 DATA_DIR="${SHELLMMO_DIR:-$HOME/.shellmmorpg}"
 SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
 # string lengths must count characters, not bytes (emoji graphics): make sure we run in a UTF-8 locale
@@ -398,8 +400,9 @@ slot_kinds() {  # slot -> KCLS (classes per kind) KCNT
   KCNT=${#KCLS[@]}
 }
 
-valid_item() {  # code -> 0 if it is well-formed gear (or a bag, or a unique)
+valid_item() {  # code -> 0 if it is well-formed gear (or a bag, a unique, a collectable)
   [[ $1 =~ ^B\.[0-5]$ ]] && return 0
+  [[ $1 =~ ^C\.(0|[1-9][0-9]?)$ ]] && { (( BASH_REMATCH[1] < NCOL )); return; }    # v5.0: collectables
   [[ $1 =~ ^U\.(0|[1-9][0-9]?)$ ]] && { (( BASH_REMATCH[1] < NUQ )); return; }
   [[ $1 =~ ^([WAOHJ])\.(0|[1-9][0-9]?)\.([1-9]|1[0-2])\.([0-3])(\.(__|[rseato][1-4]){1,3})?$ ]] || return 1   # v3.0: sockets, v4.0: tiers 10-12, v4.5: perfect gems
   local k=${BASH_REMATCH[2]}
@@ -425,6 +428,11 @@ item_stats() {  # code -> IK IKD IT IRR IVAL (dmg/armor) IBT IBV (bonus) ICLS IK
   if [[ $IK == B ]]; then                                            # bags (v1.8)
     IT=1 IRR=${BAG_RR[IKD]:-0} IVAL=${BAG_SZ[IKD]:-4} IBT="" IBV=0 ICLS=0123456789
     IKN=${BAG_NAME[IKD]} IKE=${BAG_E[IKD]} ISELL=$(( ${BAG_PRICE[IKD]:-100} / 4 ))
+    return
+  fi
+  if [[ $IK == C ]]; then                                            # collectables (v5.0): nothing to wear, all to show
+    IT=1 IRR=${CL_RR[IKD]:-0} IVAL=0 IBT="" IBV=0 ICLS=0123456789
+    IKN=${CL_NAME[IKD]} IKE=${CL_E[IKD]} ISELL=${CL_VAL[IKD]:-50}
     return
   fi
   if [[ $IK == U ]]; then                                            # uniques (v2.0): fixed name, legendary+ stats
@@ -459,7 +467,7 @@ item_name() {  # code cls -> INAME (plain) ICOL
   item_stats "$1"
   INAME="${TIER_Q[IT]} $IKN" INSHORT="${TIER_Q[IT]} $IKN"
   (( IRR > 0 )) && INAME="${RAR_NAME[IRR]} $INAME"
-  [[ $IK == B || -n $IUQ ]] && INAME=$IKN INSHORT=$IKN
+  [[ $IK == [BC] || -n $IUQ ]] && INAME=$IKN INSHORT=$IKN
   ICOL=${RAR_COL[IRR]}
 }
 
@@ -1971,6 +1979,179 @@ RUMORS+=("Hilda in Hearthmoor sells horses. A horse! In this economy! Ride with 
          "Now and then the Horde marches on a town. Everyone who helps defend it is paid in valor.")
 
 # ---------------------------------------------------------------------------
+#  Module 01f - v5.0 data: housing (a room to rent at every inn, four sizes,
+#  furniture) and collectables (item code C.<n>: 80 of them in six sets).
+#  Pure data, appended to the tables before it (indexes never move).
+# ---------------------------------------------------------------------------
+
+# --- collectables ----------------------------------------------------------------------------------------
+CS_NAME=("Dungeon Trophies" "Trophies of the Titans" "Curios of the Realm" "Angler's Treasures"
+         "Prospector's Finds" "Relics of the Story")
+CS_E=(🏆 👑 🔍 🎣 🔨 📜)
+CS_HOW=("taken from the bosses of dungeons" "taken from world bosses" "found on the creatures of every land"
+        "fished up from lakes, rivers and seas" "dug up while mining and picking herbs" "earned by following the story")
+NCS=${#CS_NAME[@]}
+CL_NAME=() CL_E=() CL_G=() CL_SET=() CL_RR=() CL_REF=() CL_FL=()
+cl() {  # set rarity emoji ascii-glyph ref "Name" "flavor"
+  CL_SET+=("$1") CL_RR+=("$2") CL_E+=("$3") CL_G+=("$4") CL_REF+=("$5") CL_NAME+=("$6") CL_FL+=("$7")
+}
+# 0: one trophy for the boss of every dungeon (ref = dungeon index)
+cl 0 1 🏺 '&'  0 "Lich's Phylactery"              "Empty now. Shake it and something inside still whispers your name."
+cl 0 1 💰 '$'  1 "Goblin King's Loot Sack"        "Mostly buttons, three teeth and a single gold coin. He loved it dearly."
+cl 0 1 🪙 'o'  2 "Ancient Hoard Coin"             "From the bottom of a hoard that nobody ever counted to the end."
+cl 0 1 🪲 'x'  3 "Golden Scarab of Anketh"        "Its legs still twitch when the moon is full."
+cl 0 1 💙 '*'  4 "Frost Wyrm's Heart"             "Frozen solid, and still it beats once a winter."
+cl 0 1 📯 'y'  5 "Horn of Azgor"                  "One blast and every imp within a mile stands to attention."
+cl 0 2 🦪 'o'  6 "Ishara's Pearl"                 "Hold it to your ear: it hums the song of the deep."
+cl 0 2 🌈 '*'  7 "Prism of the Archon"            "It turns candlelight into rainbows on your ceiling."
+cl 0 2 🗿 'I'  8 "Jade Serpent Idol"              "Its eyes follow you around the room. Probably a trick of the light."
+cl 0 2 🌋 '^'  9 "Living Lavastone"               "Warm to the touch. Do not leave it on the rug."
+cl 0 2 🌑 'O' 10 "Crown of the Hollow King"       "Light falls into it and never comes back out."
+cl 0 3 🪆 'i' 11 "Morwenna's Poppet"              "It looks a little like you. That is not a coincidence."
+cl 0 3 🔔 'A' 12 "Bell of the Drowned Cathedral"  "It rings by itself at high tide, wherever you are."
+cl 0 3 ⚡ 'z' 13 "Voltar's Bottled Storm"         "Your hair stands on end when you walk past it."
+cl 0 3 🧫 'c' 14 "Culture of the Sporefather"     "Keep the lid on. Keep the lid ON."
+cl 0 3 🥚 'e' 15 "Ember Tyrant's Egg"             "It is warm, and it is getting warmer."
+cl 0 3 👑 'M' 16 "Crown of the Undying King"      "Heavy with a thousand years of refusing to die."
+cl 0 3 💫 '*' 17 "Fragment of Azoth"              "A sliver of the star. It hums a note no instrument can play."
+cl 0 3 🌗 'C' 18 "Shard of the Eclipse"           "Half of it is always night."
+# 1: one trophy for every world boss (ref = index in WB_LIST)
+cl 1 2 🪵 '='  0 "Heartwood of the Elder Treant"  "It still puts out a green leaf every spring."
+cl 1 2 🐲 'S'  1 "Hydra's Ninth Head"             "The other eight grew back. This one sulks."
+cl 1 2 🦏 'R'  2 "Behemoth's Horn"                "As long as your arm and twice as heavy."
+cl 1 2 🏴 'F'  3 "Jolly Roger of the Corsair"     "The skull on it winks when nobody is looking."
+cl 1 2 ⏳ 'X'  4 "Hourglass of the Sand Colossus" "The sand runs upwards. Nobody knows why."
+cl 1 2 ⛄ 'Y'  5 "Ymir's Frozen Effigy"           "A tiny frost titan, carved by a very patient giant."
+cl 1 2 🧡 'Q'  6 "Furnace Heart of the Juggernaut" "It glows orange and smells of hot iron."
+cl 1 2 🦑 'K'  7 "Kraken Tentacle"                "Pickled. It still grabs at things."
+cl 1 2 🔷 'D'  8 "Glacius' Frozen Eye"            "It sees in colors that have no names."
+cl 1 2 🐢 'T'  9 "Titanback's Shell Shard"        "A whole village lived on this shell once."
+cl 1 2 🪶 'f' 10 "Thunder Roc Feather"            "It crackles with static in dry weather."
+cl 1 2 🔮 'V' 11 "Pearl of the Void Leviathan"    "Look inside, and something looks back."
+cl 1 3 ⚓ 'J' 12 "Barnacled Anchor"               "The Drowned Colossus wore it as an earring."
+cl 1 3 🎐 'W' 13 "Skyrender's Wind Chime"         "It plays storms instead of songs."
+cl 1 3 🖤 'H' 14 "Vorgath's Cinder Heart"         "Black as ash, hot as the first day of the world."
+cl 1 3 ⌛ 'P' 15 "The Pale Rider's Hourglass"     "When it runs out, turn it over. Always turn it over."
+# 2: a curio for every land (ref = region name) - rarely found on its creatures
+cl 2 1 🌰 'a' "Whisperwood"         "Whispering Acorn"            "Plant it and the tree will tell you secrets. In about two hundred years."
+cl 2 1 🗻 'A' "Stormcrag Peaks"     "Miniature Stormcrag"         "A perfect little mountain with its own little clouds."
+cl 2 1 🧦 's' "Stormcrag Foothills" "Troll's Lost Sock"           "Enormous, unwashed and somehow lonely."
+cl 2 1 🐸 'f' "Mirefen Swamp"       "Golden Bog Frog"             "Kiss it at your own risk."
+cl 2 1 🌕 'o' "Silverlake"          "Silverlake Moonstone"        "Fished out of the lake on a night with two moons."
+cl 2 1 🐔 'c' "Greenfield Meadows"  "A Very Lost Chicken"         "Somebody in Hearthmoor has been looking for this one."
+cl 2 1 🧭 'N' "Saltwind Coast"      "Smuggler's Compass"          "It points to the nearest tavern, not to the north."
+cl 2 1 🦂 'x' "Sunscorch Desert"    "Scorpion in Amber"           "Caught mid-sting a thousand years ago. Still annoyed."
+cl 2 1 🦣 'M' "Frostfang Tundra"    "Mammoth Ivory Carving"       "A hunting scene, carved by firelight in a long winter."
+cl 2 1 🥀 'r' "Ashen Wastes"        "Cinder Rose"                 "It bloomed in the ash and never wilted. It never will."
+cl 2 1 🐚 'e' "Sapphire Isles"      "Singing Sapphire Shell"      "It holds the sea. Every sea."
+cl 2 1 🎶 'n' "Crystal Highlands"   "Chiming Crystal"             "Tap it and the whole room hums along."
+cl 2 1 🐒 'm' "Emerald Jungle"      "Golden Monkey Idol"          "Every adventurer's dream. Watch out for rolling boulders."
+cl 2 1 🌵 'Y' "Scorched Badlands"   "Potted Badlands Cactus"      "Water it once a year. Do not hug it."
+cl 2 1 🎲 'd' "Void Rift"           "Die That Always Rolls Seven" "It has six sides. Do not ask how."
+cl 2 2 🍂 'l' "Duskwood"            "Eternal Autumn Leaf"         "It fell in Duskwood and never stopped being autumn."
+cl 2 2 🧩 'p' "Sunken Kingdom"      "Mosaic Tile of Ys"           "One piece of a picture of a drowned king, smiling."
+cl 2 2 🪁 'k' "Stormreach Peaks"    "Storm Kite"                  "It flies by itself, even indoors. Especially indoors."
+cl 2 2 🧸 'b' "Gloomcap Hollows"    "Sporeling Plushie"           "Soft, fuzzy and faintly glowing. Do not sniff it."
+cl 2 2 🦴 'v' "Dragonspine"         "Dragonspine Vertebra"        "One bone of the mountain's spine. It is still warm."
+cl 2 2 🦷 't' "Bonefields"          "Chattering Jaw"              "It chatters on cold nights. It has opinions."
+cl 2 2 🌠 '*' "Starfall Crater"     "Meteorite Chip"              "It fell from the sky in the same night as the star itself."
+# 3: what anglers pull out of the water now and then
+cl 3 0 👢 'L' - "Old Boot"                  "Every angler catches one. Yours has a fish living in it."
+cl 3 1 🍾 'i' - "Message in a Bottle"       "'If found, please return to...' - the rest is smudged."
+cl 3 1 🦆 'd' - "Rubber Duck"               "Who loses a rubber duck in the open sea?"
+cl 3 1 🔭 '/' - "Sailor's Spyglass"         "Everything looks closer and slightly wetter."
+cl 3 2 🪞 'O' - "Mermaid's Mirror"          "Your reflection smiles a moment before you do."
+cl 3 2 🔑 'k' - "Key to Davy's Locker"      "Whatever it opens is at the bottom of the sea."
+cl 3 3 ⚫ 'o' - "Black Pearl"               "As dark as the deep and worth a small ship."
+cl 3 3 🔱 'E' - "Tidecaller's Trident Head" "The tide comes in a little when you touch it."
+# 4: what miners and herbalists find between the ore and the leaves
+cl 4 0 🪨 'o' - "Lucky Pebble"              "Perfectly round and perfectly ordinary. Lucky anyway."
+cl 4 1 🐌 '@' - "Fossilized Snail"          "Ten thousand years old and still slow."
+cl 4 1 🍀 '%' - "Four-Leaf Clover"          "Found between the herbs and pressed between two pages."
+cl 4 1 💮 '*' - "Pressed Moonflower"        "It only blooms at midnight, and only for a minute."
+cl 4 2 🦟 'a' - "Amber with a Mosquito"     "Some say there is dragon blood in it."
+cl 4 2 🦕 'S' - "Sauropod Fossil"           "A whole little skeleton, curled up in the rock."
+cl 4 2 🥥 'G' - "Thunder Egg"               "A geode, not a coconut. Crack it open and it sparkles."
+cl 4 3 💗 'H' - "Heart of the Mountain"     "A red crystal that pulses slowly, like something asleep."
+# 5: the story gives one at every sixth chapter (ref = chapters done)
+cl 5 2 🍺 'u'  6 "Old Tom's Tankard"         "'To the hero who listened to an old man's tale!'"
+cl 5 2 💍 'q' 12 "Ser Kael's Signet Ring"    "The sign of an exiled knight, given to a friend."
+cl 5 2 🫖 'w' 18 "Orwin's Bubbling Kettle"   "It brews tea without fire. And sometimes without tea."
+cl 5 3 🏅 'W' 24 "The Crownbearer's Medal"   "Given by the five towns to the one who mended the crown."
+cl 5 3 💌 'h' 30 "Sealed Dawnguard Letter"   "Never opened. Some letters are better kept."
+cl 5 3 🚩 'B' 36 "Banner of the Dawn"        "Carried through the Bonefields and back again."
+cl 5 3 🪐 'Z' 42 "Orrery of the Fallen Star" "The whole sky in brass - with one star missing."
+unset -f cl
+NCOL=${#CL_NAME[@]}
+CL_VAL=() CL_SRC=() COL_SETL=() COL_W=(50 30 15 5)    # sell value, where it comes from, the members of every set, pick weights
+declare -A COL_BOSS=() COL_CUR=()                     # monster type -> trophy, region name -> curio
+for (( _i = 0; _i < NCOL; _i++ )); do
+  _r=${CL_REF[_i]}
+  CL_VAL[_i]=$(( ${CL_RR[_i]} == 0 ? 80 : (${CL_RR[_i]} == 1 ? 300 : (${CL_RR[_i]} == 2 ? 1000 : 3500)) ))
+  COL_SETL[CL_SET[_i]]+="$_i "
+  case ${CL_SET[_i]} in
+    0) _t=${D_BOSS[_r]}; COL_BOSS[$_t]=$_i; _n=${D_NAME[_r]}; [[ $_n == The\ * ]] || _n="the $_n"
+       CL_SRC[_i]="${M_NAME[_t]}, the master of $_n" ;;
+    1) _t=${WB_LIST[_r]}; COL_BOSS[$_t]=$_i; CL_SRC[_i]="${M_NAME[_t]}, a world boss" ;;
+    2) COL_CUR[$_r]=$_i; CL_SRC[_i]="the creatures of the $_r" ;;
+    3) CL_SRC[_i]="fishing, anywhere" ;;
+    4) CL_SRC[_i]="mining and herbalism, anywhere" ;;
+    5) CL_SRC[_i]="chapter $_r of the story" ;;
+  esac
+done
+unset _i _r _t _n
+
+# --- housing: four rooms, rented at any inn (they all keep the same room for you) -----------------------------
+ROOM_NAME=("" "Attic Room" "Guest Room" "Grand Suite" "Hero's Hall")
+ROOM_LVL=(0 5 15 25 35)                 # level you need
+ROOM_COST=(0 300 2500 12000 50000)      # to move in (moving up pays the difference)
+ROOM_RENT=(0 60 300 1200 4000)          # every week (paid when you go up, from your purse or the vault)
+ROOM_CAP=(0 20 35 50 70)                # room chest: items
+ROOM_REST=(0 10 15 20 25)               # Well Rested: % more experience from kills
+ROOM_DESC=("" "a slanted roof, a narrow bed and a window full of stars"
+           "a real fireplace, a soft bed and room for a little collection"
+           "two rooms in one, with velvet chairs and a view over the town"
+           "the finest rooms the guild has: a hall for your legend")
+# layouts: # wall  . floor  < the door  B bed  C chest  D display  K bookshelf (collection book)  G guestbook
+#          F fireplace  P plant  T chair  L lantern  A banner
+ROOM_LAY=(""
+  '##############/#B..D....D..F#/#............#/#C..........K#/#............#/#P..D....D..G#/#............#/######<#######'
+  '####################/#B.F....D..D..D...K#/#..................#/#C.................#/#....D........D....#/#P.......TT.......L#/#....D........D....#/#..................#/#P......D.....G...P#/#########<##########'
+  '############################/#F...D...D...D...D...D....K#/#..........................#/#B.........................#/#...D......T..T.......D....#/#C.........................#/#...D...................D..#/#L.........................#/#...D.......A..A........D..#/#..........................#/#P....D....D....G....D....P#/#############<##############'
+  '####################################/#F...D...D...D...D...D...D...D....K#/#..................................#/#B..............D..................#/#..................................#/#C...D......T..T......T..T......D..#/#..................................#/#L...D....A................A....D..#/#..................................#/#P...D......T..T......T..T......D..#/#..................................#/#L.................................#/#..D....D....D....G...D....D....D..#/#P................................P#/#################<##################')
+ROOM_NDSP=()
+for (( _i = 0; _i < ${#ROOM_LAY[@]}; _i++ )); do _r=${ROOM_LAY[_i]//[^D]/}; ROOM_NDSP[_i]=${#_r}; done; unset _i _r
+NROOM=$(( ${#ROOM_NAME[@]} - 1 ))
+declare -A FURN_E=([B]=🛌 [C]=📦 [D]=🔲 [F]=🔥 [P]=🪴 [K]=📚 [G]=📒 [T]=🪑 [L]=🏮 [A]=🚩)
+declare -A FURN_G=([B]=B [C]='=' [D]=o [F]='*' [P]='&' [K]='%' [G]='?' [T]=h [L]=i [A]='!')
+declare -A FURN_C=([B]="1;38;5;217" [C]="1;38;5;180" [D]="38;5;244" [F]="1;38;5;202" [P]="1;38;5;70" [K]="1;38;5;137"
+                   [G]="1;38;5;229" [T]="38;5;137" [L]="1;38;5;220" [A]="1;38;5;160")
+declare -A FURN_SAY=([F]="The fire crackles. You could sit here for hours."
+                     [P]="A healthy plant. Somebody from the inn waters it while you are away."
+                     [T]="A comfortable chair. It knows the shape of you by now."
+                     [L]="The lantern burns low and warm."
+                     [A]="A banner with your colors. The innkeeper had it stitched for you.")
+RM_PED=239                              # the stone a display stands on (HD background)
+REST_MS=1800000                         # Well Rested lasts 30 minutes
+
+# --- achievements of the housing update -----------------------------------------------------------------
+ACH50=${#ACH[@]}
+ACH+=("Homeowner:Rent a room at an inn:" "Grand Host:Rent the Hero's Hall:the Host"
+      "Collector:Discover 20 collectables:" "Curator:Discover 50 collectables:the Curator"
+      "Master Collector:Discover every collectable:the Collector"
+      "Trophy Hunter:Every dungeon trophy:the Trophy Hunter" "Titanslayer:Every trophy of the titans:the Titanslayer"
+      "Curious:Every curio of the realm:the Curious" "Lucky Angler:Every angler's treasure:the Lucky"
+      "Rockhound:Every prospector's find:the Rockhound" "Keeper of Tales:Every relic of the story:Keeper of Tales"
+      "Exhibitor:Show 20 things in your room at once:" "Good Company:Five visitors signed your guestbook:the Hospitable")
+NACH=${#ACH[@]}
+
+RUMORS+=("Every inn has rooms upstairs - rent one and the whole guild keeps it for you, in every town."
+         "Bosses sometimes leave a trophy behind. Put it on a display in your room and let your friends stare."
+         "They say a chicken went missing in the Greenfield Meadows. Some say it went on an adventure."
+         "Sleep in your own bed and you wake up Well Rested: more experience from every fight."
+         "Fishermen pull up the strangest things. Boots, mostly. But not only boots.")
+
+# ---------------------------------------------------------------------------
 #  Module 02 - network: a hub relays every line to every connection; the
 #  python3 and socat hubs also bind each connection to one sender id and let
 #  only the world server (secret token) speak as "srv".
@@ -2974,7 +3155,7 @@ srv_line() {
   case $typ in
     HELLO) srv_hello "$from" "$a" ;;
     POS)   # name cls lvl map x y hp maxhp dead sym col
-      isnum "$c" && isnum "$e" && isnum "$f" && [[ $d =~ ^(W|D[0-9]+)$ ]] || return
+      isnum "$c" && isnum "$e" && isnum "$f" && [[ $d =~ ^(W|D[0-9]+|H[0-9]{1,8})$ ]] || return   # v5.0: H = a room at the inn
       (( c <= 99 && e <= 999 && f <= 999 )) || return
       [[ -n ${SP_NAME[$from]} ]] || srv_hello "$from" "$a"
       SP_LVL[$from]=$c SP_MAP[$from]=$d SP_X[$from]=$e SP_Y[$from]=$f SP_SEEN[$from]=$NOW
@@ -3261,8 +3442,12 @@ Z_CRYF=$'\e[0;38;5;183m.' Z_CRYS=$'\e[0;1;38;5;141m^' Z_JUNG=$'\e[0;38;5;34m,' Z
 Z_BAD=$'\e[0;38;5;166m.' Z_MESA=$'\e[0;38;5;130m^' Z_VOIDF=$'\e[0;38;5;97m.' Z_CHASM=$'\e[0;38;5;201;48;5;53m~'   # v2.0 lands
 Z_AUT=$'\e[0;38;5;172m.' Z_ATREE=$'\e[0;1;38;5;166mT' Z_MYC=$'\e[0;38;5;139m,' Z_SHROOM=$'\e[0;1;38;5;170mT'          # v4.0 lands
 Z_HGT=$'\e[0;38;5;109m.' Z_CRAG=$'\e[0;1;38;5;67m^' Z_BONE=$'\e[0;38;5;187m.'
-set_palette() {  # dungeon type or -1 for the open world
-  if (( $1 < 0 )); then
+set_palette() {  # dungeon type, -1 for the open world, -2 for a room at the inn (v5.0)
+  Z_EXT=$'\e[0;1;38;5;201m<' Z2_EXT=$'\e[0;48;5;53m🌀'
+  if (( $1 == -2 )); then
+    Z_WALL=$'\e[0;38;5;137m#' Z_FLR=$'\e[0;38;5;94m.' Z_EXT=$'\e[0;1;38;5;180m<'
+    Z2_WALL=$'\e[0;48;5;58m🟫' Z2_FLR=$'\e[0;48;5;94m  ' Z2_EXT=$'\e[0;48;5;94m🚪'
+  elif (( $1 < 0 )); then
     Z_WALL=$'\e[0;38;5;244m#' Z_FLR=$'\e[0;38;5;239m.'
     Z2_WALL=$'\e[0;48;5;94m🧱' Z2_FLR=$'\e[0;48;5;102m  '
   else
@@ -3270,6 +3455,7 @@ set_palette() {  # dungeon type or -1 for the open world
     Z2_WALL=$'\e[0;48;5;235m'"${D_WE[$1]:-🧱}" Z2_FLR=$'\e[0;'"${D_FLOOR[$1]/38;5/48;5}m  "
     Z2_z=$'\e[0;'"${D_FLOOR[$1]/38;5/48;5}m🦴"
   fi
+  Z_FURN=$Z_FLR Z2_FURN=$Z2_FLR                  # "+": furniture stands here (rooms only), drawn on top
   declare -F tbg_build >/dev/null && tbg_build
   declare -F tiles_init >/dev/null && tiles_init
 }
@@ -3287,7 +3473,7 @@ colorize1() {   # CZ in place (classic ASCII, 1 column per tile)
   CZ=${CZ//K/$Z_CRYF}; CZ=${CZ//C/$Z_CRYS}; CZ=${CZ//J/$Z_JUNG}; CZ=${CZ//W/$Z_JTREE}
   CZ=${CZ//D/$Z_BAD}; CZ=${CZ//V/$Z_MESA}; CZ=${CZ//E/$Z_VOIDF}; CZ=${CZ//G/$Z_CHASM}
   CZ=${CZ//q/$Z_AUT}; CZ=${CZ//y/$Z_ATREE}; CZ=${CZ//M/$Z_MYC}; CZ=${CZ//U/$Z_SHROOM}
-  CZ=${CZ//H/$Z_HGT}; CZ=${CZ//X/$Z_CRAG}; CZ=${CZ//B/$Z_BONE}
+  CZ=${CZ//H/$Z_HGT}; CZ=${CZ//X/$Z_CRAG}; CZ=${CZ//B/$Z_BONE}; CZ=${CZ//'+'/$Z_FURN}
 }
 
 # glyphs for everything that moves (spliced between colorized terrain segments)
@@ -3476,7 +3662,7 @@ gain_xp() {
 
 add_item() {  # code
   item_name "$1" "$CLS"
-  if (( ${#INV[@]} >= BAGS )) && [[ -z $IUQ ]]; then        # a unique is too precious to auto-sell: it squeezes in
+  if (( ${#INV[@]} >= BAGS )) && [[ -z $IUQ && $IK != C ]]; then   # a unique (or a collectable) is too precious to auto-sell: it squeezes in
     GOLD=$(( GOLD + ISELL ))
     logm "Bags full - auto-sold $INAME for ${ISELL}g" "$K_LOOT"
   else
@@ -3490,6 +3676,11 @@ add_item() {  # code
     if [[ $IK == B ]]; then
       item_icon "$1" "$CLS"
       logm "${EMJ[loot]}Loot: $II${II:+ }$INAME - a bag with $IVAL slots! Put it on in [i]." $'\e['"${ICOL}m"
+      return
+    fi
+    if [[ $IK == C ]]; then
+      item_icon "$1" "$CLS"; col_mark "$IKD"
+      logm "${EMJ[loot]}Collectable: $II${II:+ }$INAME (${CS_NAME[${CL_SET[IKD]}]})" $'\e['"${ICOL}m"
       return
     fi
     local lab=dmg nv=$IVAL nm=$INAME col=$ICOL up="" ok=1 cl=$ICLS; [[ $IK != W ]] && lab=armor
@@ -3506,10 +3697,11 @@ add_item() {  # code
 }
 
 reward() {  # xp gold item mtype
-  local i f done=()
-  gain_xp "$1"; GOLD=$(( GOLD + $2 )); KILLS=$(( KILLS + 1 ))
-  logm "${EMJ[xp]}+$1 XP  ${EMJ[gold]}+$2 gold" "$K_GOOD"
-  ft_add "$PX" $(( PY - 1 )) "+$1xp" $'\e[0;1;38;5;220;48;5;234m'
+  local i f done=() xp=$1
+  (( NOW < REST_UNTIL )) && xp=$(( xp * (100 + REST_PCT) / 100 ))      # v5.0: Well Rested
+  gain_xp "$xp"; GOLD=$(( GOLD + $2 )); KILLS=$(( KILLS + 1 ))
+  logm "${EMJ[xp]}+$xp XP  ${EMJ[gold]}+$2 gold" "$K_GOOD"
+  ft_add "$PX" $(( PY - 1 )) "+${xp}xp" $'\e[0;1;38;5;220;48;5;234m'
   case $3 in
     H) POT_H=$(( POT_H + 1 )); ci h; logm "${EMJ[loot]}Loot: ${CI}Health Potion" "$K_LOOT" ;;
     M) POT_M=$(( POT_M + 1 )); ci m; logm "${EMJ[loot]}Loot: ${CI}Mana Potion" "$K_LOOT" ;;
@@ -4156,9 +4348,12 @@ leave_instance() {
   for (( y = 0; y < ${MAPH[$old]:-0}; y++ )); do unset "MAPROW[$old:$y]" "EXPL[$old:$y]"; done
   CUR_MAP=W CUR_DT=-1 PX=$WX PY=$WY clear_until=0
   cm_clear; set_palette -1
+  [[ $old == H* ]] && room_left
   send SYNC "$MY_ID" W
-  POS_DIRTY=1 MAP_DIRTY=1
-  [[ $1 == quiet ]] || logm "You climb back into the daylight." "$K_GOOD"
+  POS_DIRTY=1 MAP_DIRTY=1 NEED_FULL=1
+  if [[ $1 != quiet ]]; then
+    if [[ $old == H* ]]; then logm "You go back down to the taproom." "$K_SYS"; else logm "You climb back into the daylight." "$K_GOOD"; fi
+  fi
 }
 
 dungeon_enter() {
@@ -4191,6 +4386,7 @@ try_move() {  # dx dy
     if hostile "$MID"; then melee "$MID"; else talk_open "$MID"; fi
     next_move=$(( NOW + 150 )); return
   fi
+  if [[ $CUR_MAP == H* && -n ${RM_AT[$nx,$ny]} ]]; then room_use "${RM_AT[$nx,$ny]}"; next_move=$(( NOW + 250 )); return; fi   # v5.0
   tile "$CUR_MAP" "$nx" "$ny"
   case $T in
     Q) qev_board; QSRC=board; [[ ${#OFFERS[@]} -gt 0 && $OFFER_LVL == "$LVL" && $OFFER_SRC == board ]] || gen_offers; UI=quest; MAP_DIRTY=1; return ;;
@@ -4337,7 +4533,7 @@ eq_of() { case $1 in W) EQC=$EQW ;; A) EQC=$EQA ;; O) EQC=$EQO ;; H) EQC=$EQH ;;
 is_junk() {  # code -> 0 if unusable for my class or not better than what I wear there; JS = sell value
   local v b
   item_stats "$1"; JS=$ISELL
-  [[ $1 == *! || $IK == B || -n $IUQ ]] && return 1
+  [[ $1 == *! || $IK == [BC] || -n $IUQ ]] && return 1
   [[ $ICLS == *"$CLS"* ]] || return 0
   v=$IVAL b=$IBV; eq_of "$IK"; [[ -n $EQC ]] || return 1
   item_stats "$EQC"
@@ -4383,6 +4579,11 @@ shop_key() {
       junk_value; (( JUNK )) || { logm "No junk in your bags - everything beats what you wear."; return; }
       for c in "${INV[@]}"; do is_junk "$c" || keep+=("$c"); done
       INV=("${keep[@]}"); GOLD=$(( GOLD + JVAL )); logm "Sold $JUNK junk items for $JVAL gold." "$K_LOOT" ;;
+    c|C)                                                         # v5.0: collectables you already own once
+      [[ $SHOP == @(general|trader|spice) ]] || return
+      col_dupes; (( ${#DUP[@]} )) || { logm "No duplicate collectables in your bags - lock one with [l] to keep it."; return; }
+      for c in "${!INV[@]}"; do [[ " ${DUP[*]} " == *" $c "* ]] || keep+=("${INV[c]}"); done
+      GOLD=$(( GOLD + DUPV )); logm "Sold ${#DUP[@]} duplicate collectables for $DUPV gold." "$K_LOOT"; INV=("${keep[@]}") ;;
     f|F)
       [[ $SHOP == @(general|trader|spice) ]] || return
       fish_value; (( FISHN )) || { logm "You have no fish to sell."; return; }
@@ -4390,8 +4591,8 @@ shop_key() {
       GOLD=$(( GOLD + FISHV )); logm "Sold $FISHN fish for $FISHV gold." "$K_LOOT" ;;
     s|S)
       (( ${#INV[@]} )) || { logm "Nothing to sell."; return; }
-      for c in "${INV[@]}"; do if [[ $c == *! ]]; then keep+=("$c"); else item_stats "$c"; total=$(( total + ISELL )); fi; done
-      (( ${#INV[@]} > ${#keep[@]} )) || { logm "Everything in your bags is locked."; return; }
+      for c in "${INV[@]}"; do if [[ $c == *! || $c == C.* ]]; then keep+=("$c"); else item_stats "$c"; total=$(( total + ISELL )); fi; done
+      (( ${#INV[@]} > ${#keep[@]} )) || { logm "Everything in your bags is locked (or a collectable)."; return; }
       GOLD=$(( GOLD + total )); logm "Sold $(( ${#INV[@]} - ${#keep[@]} )) items for $total gold." "$K_LOOT"; INV=("${keep[@]}") ;;
   esac
 }
@@ -4422,6 +4623,9 @@ talk_key() {
     6) ql_for_npc "$TALK_T" && UI=wares ;;
     7) [[ $role == smith ]] && jewel_open ;;
     8) [[ $role == inn ]] && tal_reset ;;
+    9) [[ $role == inn ]] || return                             # v5.0: rooms upstairs
+       if (( NOW < WANTED_UNTIL )); then TALK_LINE="No rooms for murderers. Out!"; return; fi
+       UI=inn ;;
     3) [[ -n ${N_QK[$TALK_T]}${N_QD[$TALK_T]} ]] || return
        QSRC=$TALK_T
        [[ ${#OFFERS[@]} -gt 0 && $OFFER_LVL == "$LVL" && $OFFER_SRC == "$QSRC" ]] || gen_offers
@@ -4584,7 +4788,7 @@ cli_srv() {  # typ fields...
           fi ;;
     REW)  [[ $a == "$MY_ID" ]] && num "$b" && num "$c" && num "$e" || return
           (( e < NM )) || return
-          reward "$b" "$c" "$d" "$e"; dly_kill "$e" "${f:-0}" ;;
+          reward "$b" "$c" "$d" "$e"; dly_kill "$e" "${f:-0}"; col_kill "$e" "${f:-0}" ;;
     MDONE) [[ $a == "$MY_ID" ]] && num "$b" && num "$c" && num "$d" && num "$e" || return
           (( b <= MYTH_MAX && c <= 2 && e <= 5000 )) && myth_done "$b" "$c" "$d" "$e" ;;
     EVREW) [[ $a == "$MY_ID" ]] && num "$b" && num "$c" && num "$d" || return
@@ -4700,7 +4904,7 @@ cli_line() {
     HELLO) [[ -z ${OP_NAME[$from]} ]] && logm "$nm has entered the world." "$K_SYS"
            OP_NAME[$from]=$nm OP_SEEN[$from]=$NOW ;;
     POS)   # name cls lvl map x y hp max dead sym col ally ax ay|mount
-      [[ $b =~ ^[0-9]$ && $d =~ ^(W|D[0-9]+)$ ]] && (( b < NCLS )) && num "$c" && num "$e" && num "$f" && num "$g" && num "$h" || return
+      [[ $b =~ ^[0-9]$ && $d =~ ^(W|D[0-9]+|H[0-9]{1,8})$ ]] && (( b < NCLS )) && num "$c" && num "$e" && num "$f" && num "$g" && num "$h" || return
       [[ -z ${OP_NAME[$from]} ]] && logm "$nm is here." "$K_SYS"
       valid_sym "$j" || j=@
       if isnum "$k" && (( k < ${#P_COLC[@]} )); then :; else name_color "$nm"; k=$NCI; fi
@@ -4732,6 +4936,7 @@ cli_line() {
            elif [[ $c == I ]] && valid_item "$d"; then logm "$nm hands you something." "$K_LOOT"; add_item "$d"; fi ;;
     FX)    [[ $a == "$CUR_MAP" ]] && add_fx "$b" "$c" ;;
     TREQ|TACC|TOFF|TOK|TCAN) trade_msg "$typ" "$from" "$nm" "$b" "$c" "$d" "$e" "$f" ;;
+    RASK|RHAS|RREQ|ROOM|RNO|RSIGN) room_msg "$typ" "$from" "$nm" "$b" "$c" "$d" "$e" ;;     # v5.0: visiting rooms
   esac
 }
 
@@ -4974,7 +5179,7 @@ gather_tick() {
   send HIT "$MY_ID" "$CUR_MAP" "$m" 1 0
   mat_icon "$mat"
   logm "+$n $MI${MI:+ }${MAT_NAME[mat]}   (${PROF_NAME[NPK]} ${PROF_LV[NPK]}, ${MATS[mat]} in your bag)" "$K_LOOT"
-  prof_gain "$NPK" "$xp"; dly_ev gath
+  prof_gain "$NPK" "$xp"; dly_ev gath; col_find 4
 }
 
 fish_stop() { (( FISH_ST )) || return; FISH_ST=0 MAP_DIRTY=1; [[ $1 == quiet ]] || logm "You reel in your line."; }
@@ -5051,7 +5256,7 @@ fish_strike() {
   if (( FPOS >= FISH_ZS && FPOS < FISH_ZS + FISH_ZW )); then
     MATS[f]=$(( MATS[f] + 1 )); MAT_NEW[f]=$(( ${MAT_NEW[f]:-0} + 1 )); mat_icon "$f"
     if (( rar == 2 )); then logm "You caught a $MI${MI:+ }${MAT_NAME[f]}! A rare catch!" "$K_ANN"; else logm "You caught a $MI${MI:+ }${MAT_NAME[f]}." "$K_LOOT"; fi
-    prof_gain 0 $(( (rar == 0 ? 8 : (rar == 1 ? 13 : 26)) + FISH_REQ )); dly_ev fish
+    prof_gain 0 $(( (rar == 0 ? 8 : (rar == 1 ? 13 : 26)) + FISH_REQ )); dly_ev fish; col_find 3
   else
     logm "Missed! The ${MAT_NAME[f]} slips off the hook." "$K_HURT"
   fi
@@ -5569,12 +5774,12 @@ Z2_l="${E0}48;5;180m🐚" Z2_o="${E0}48;5;180m🦴" Z2_r="${E0}48;5;253m🎄" Z2
 Z2_w="${E0}48;5;137m👣" Z2_x="${E0}48;5;58m🍄" Z2_z="${E0}48;5;236m🦴"
 WAVE="${E0}48;5;25m🌊" CALM="${E0}38;5;39;48;5;25m~ " LAVA_A="${E0}48;5;202m🟧" LAVA_B="${E0}48;5;202m🟥"
 Z2_WAT="${E0}38;5;39;48;5;25m  " Z2_i=$WAVE Z2_j=$CALM Z2_LAVA=$LAVA_A Z2_v=$LAVA_B Z_DARKBG=$'\e[0;48;5;233m'
-T2C=(' ' . , '"' '*' T '~' '^' '#' _ : = % '>' '<' Q O F S s Y N n P I A L R Z b c f g h i j l o r t u v w x z K C J W D V E G a d e k p q y M U H X B)
+T2C=(' ' . , '"' '*' T '~' '^' '#' _ : = % '>' '<' Q O F S s Y N n P I A L R Z b c f g h i j l o r t u v w x z K C J W D V E G a d e k p q y M U H X B '+')
 T2V=(Z2_VOID Z2_DOT Z2_COM Z2_TG Z2_FLW Z2_TREE Z2_WAT Z2_MTN Z2_WALL Z2_FLR Z2_ROAD Z2_BRG Z2_SWP Z2_ENT Z2_EXT
      Z2_QST Z2_FTN Z2_FIRE Z2_SAND Z2_DUNE Z2_CACT Z2_SNOW Z2_DRIFT Z2_PINE Z2_ICE Z2_ASH Z2_LAVA Z2_ROCK Z2_WAY
      Z2_b Z2_c Z2_f Z2_g Z2_h Z2_i Z2_j Z2_l Z2_o Z2_r Z2_t Z2_u Z2_v Z2_w Z2_x Z2_z
      Z2_CRYF Z2_CRYS Z2_JUNG Z2_JTREE Z2_BAD Z2_MESA Z2_VOIDF Z2_CHASM Z2_a Z2_d Z2_e Z2_k Z2_p
-     Z2_AUT Z2_ATREE Z2_MYC Z2_SHROOM Z2_HGT Z2_CRAG Z2_BONE)
+     Z2_AUT Z2_ATREE Z2_MYC Z2_SHROOM Z2_HGT Z2_CRAG Z2_BONE Z2_FURN)
 
 tbg_build() {  # background of every tile, so sprites blend into the ground
   local i z
@@ -5600,7 +5805,7 @@ colorize2() {  # CZ in place; order matters: chars that appear in a replacement 
   CZ=${CZ//v/$Z2_v}; CZ=${CZ//w/$Z2_w}; CZ=${CZ//x/$Z2_x}; CZ=${CZ//z/$Z2_z}
   CZ=${CZ//a/$Z2_a}; CZ=${CZ//d/$Z2_d}; CZ=${CZ//e/$Z2_e}; CZ=${CZ//k/$Z2_k}; CZ=${CZ//p/$Z2_p}
   CZ=${CZ//q/$Z2_AUT}; CZ=${CZ//y/$Z2_ATREE}; CZ=${CZ//M/$Z2_MYC}; CZ=${CZ//U/$Z2_SHROOM}
-  CZ=${CZ//H/$Z2_HGT}; CZ=${CZ//X/$Z2_CRAG}; CZ=${CZ//B/$Z2_BONE}
+  CZ=${CZ//H/$Z2_HGT}; CZ=${CZ//X/$Z2_CRAG}; CZ=${CZ//B/$Z2_BONE}; CZ=${CZ//'+'/$Z2_FURN}
 }
 
 build_vrow() {  # map y: decorated render copy of one row (sprouts, mushrooms, shells, waves...), deterministic
@@ -5656,6 +5861,7 @@ item_icon() {  # code cls -> II: [type][material][rarity] (HD) or "" (ASCII)
   item_stats "$1"
   II="$IKE${MAT_E[IT]}${RAR_E[IRR]}"
   [[ $IK == B ]] && II="$IKE${BAG_M[IKD]}${RAR_E[IRR]}"
+  [[ $IK == C ]] && II="$IKE${CS_E[${CL_SET[IKD]}]}${RAR_E[IRR]}"
 }
 ci() { CI=""; (( TW2 )) && CI="${CON_E[$1]:-  } "; }     # consumable icon + space
 plain() {  # colored text -> PL (escape sequences removed)
@@ -5780,9 +5986,9 @@ dark_glyphs() {  # CZ in place: every tile becomes its plain sketch, TW characte
     CZ=${CZ//' '/'  '}; CZ=${CZ//[._:SNAIKJDEqMHB]/'  '}; CZ=${CZ//[,sn]/' ,'}; CZ=${CZ//'"'/'""'}; CZ=${CZ//'*'/' *'}
     CZ=${CZ//[TPWyU]/'T '}; CZ=${CZ//Y/'Y '}; CZ=${CZ//[~LG]/'~~'}; CZ=${CZ//[\^RCVX]/'^^'}; CZ=${CZ//'#'/'##'}
     CZ=${CZ//'='/'=='}; CZ=${CZ//'%'/'%%'}; CZ=${CZ//'>'/'> '}; CZ=${CZ//'<'/'< '}; CZ=${CZ//Z/'& '}
-    CZ=${CZ//Q/'! '}; CZ=${CZ//O/'o '}; CZ=${CZ//F/'* '}
+    CZ=${CZ//Q/'! '}; CZ=${CZ//O/'o '}; CZ=${CZ//F/'* '}; CZ=${CZ//'+'/'  '}
   else
-    CZ=${CZ//[SNAI_:KJDEqMHB]/.}; CZ=${CZ//[sn]/,}; CZ=${CZ//[PWyU]/T}; CZ=${CZ//[LG]/'~'}; CZ=${CZ//[RCVX]/^}
+    CZ=${CZ//'+'/.}; CZ=${CZ//[SNAI_:KJDEqMHB]/.}; CZ=${CZ//[sn]/,}; CZ=${CZ//[PWyU]/T}; CZ=${CZ//[LG]/'~'}; CZ=${CZ//[RCVX]/^}
     CZ=${CZ//Z/'&'}; CZ=${CZ//Q/'!'}; CZ=${CZ//O/o}; CZ=${CZ//F/'*'}
   fi
 }
@@ -6978,6 +7184,7 @@ render_map() {
     (( dx >= 0 && dx < VW && dy >= 0 && dy < VH )) && RI[dy]+="$(( dx * 10 + ${FXP[${FX_K[i]}]:-0} )):1:f${FX_K[i]} "
   done
   [[ $map == W && -n $CW ]] && add_particles
+  [[ $map == H* ]] && room_overlay "$cx0" "$cy0"               # v5.0: the furniture of a room
   if (( DEAD )); then GLY[self]=$'\e[0;38;5;240m'"$SYM" GLYH[self]=$'\e[0;48;5;238m💀'
   elif (( NOW - last_hurt < 180 )); then
     GLY[self]=$'\e[0;1;38;5;231;48;5;196m'"$SYM" GLYH[self]=$'\e[0;48;5;196m'"${CEMO[CLS]}"; MAP_DIRTY=1
@@ -6990,7 +7197,7 @@ render_map() {
     [[ ${OP_MAP[$p]} == "$map" ]] || continue
     dx=$(( ${OP_X[$p]} - cx0 )) dy=$(( ${OP_Y[$p]} - cy0 ))
     (( dx >= 0 && dx < VW && dy >= 0 && dy < VH )) || continue
-    if [[ $map != W ]]; then cheb $(( ${OP_X[$p]} - PX )) $(( ${OP_Y[$p]} - PY )); (( D <= LRY )) || continue; fi
+    if [[ $map == D* ]]; then cheb $(( ${OP_X[$p]} - PX )) $(( ${OP_Y[$p]} - PY )); (( D <= LRY )) || continue; fi
     if (( ${OP_SAYT[$p]:-0} > NOW )); then
       add_tag "$dx" "$dy" "${OP_SAY[$p]:0:26}" $'\e[0;38;5;16;48;5;254m'
     elif (( TAGS_ON )); then
@@ -7032,8 +7239,8 @@ render_map() {
     done
   fi
   LITMODE=0 LITR=""
-  if [[ $map != W ]]; then dark=1; update_fog
-  elif (( NR > 0 || WR > 0 )); then LITMODE=1; build_lit "$cx0" "$cy0"; fi
+  if [[ $map == D* ]]; then dark=1; update_fog
+  elif [[ $map == W ]] && (( NR > 0 || WR > 0 )); then LITMODE=1; build_lit "$cx0" "$cy0"; fi
   render_rows
   unset "SCR[m$(( VH - 2 ))]" "SCR[m$(( VH - 3 ))]" "SCR[m$(( VH / 2 ))]" "SCR[m$(( VH / 2 - 5 ))]"   # under the overlays
   out+=$N
@@ -7053,6 +7260,9 @@ render_header() {
   if [[ $CUR_MAP == W ]]; then
     region_of "$PX" "$PY"
     if [[ $RLVL == safe ]]; then loc="$RNAME ${K_GOOD}(safe)$N"; else loc="$RNAME ${K_SYS}(lvl $RLVL)$N"; fi
+  elif [[ $CUR_MAP == H* ]]; then                                     # v5.0: a room at the inn
+    if [[ $RM_OWNER == "$MY_ID" ]]; then loc=$'\e[38;5;180m'"your ${ROOM_NAME[RM_TIER]}$N"
+    else loc=$'\e[38;5;180m'"${OP_NAME[$RM_OWNER]:-someone}'s ${ROOM_NAME[RM_TIER]}$N"; fi
   else
     loc=$'\e[38;5;203m'"${D_NAME[CUR_DT]}$N"
   fi
@@ -7219,7 +7429,7 @@ render_input() {
     (( ${#t} > w )) && t=${t: -w}
     l+=$' \e[1;38;5;51msay>'"$N $t"$'\e[5m_\e[0m'
   else
-    t=" [wasd] move [1-3] skills [e/r] potions [u] eat [g] fish/gather [i]nv [x] talents [y] allies [p]rof [m]ap [q]uests [b]easts [c]hat log [v] graphics [enter] chat [?] help"
+    t=" [wasd] move [1-3] skills [e/r] potions [u] eat [g] fish/gather [i]nv [x] talents [y] allies [p]rof [m]ap [q]uests [b]easts [c]hat log [H] collection [v] graphics [enter] chat [?] help"
     l+="${K_SYS}${t:0:COLS-1}$N"
   fi
   emit inp "$l"$'\e[K'
@@ -7271,7 +7481,11 @@ ui_talk() {
     ui "  [6] Show me the ${FAC_NAME[${QL_FAC[QLN]}]}'s wares" "$K_LOOT"
   fi
   [[ $role == smith ]] && ui "  [7] Set gems into my gear (jewelcrafting)" $'\e[1;38;5;213m'
-  if [[ $role == inn ]]; then tal_reset_cost; ui "  [8] Help me forget my talents ($TRC gold)" "$K_SYS"; fi
+  if [[ $role == inn ]]; then
+    tal_reset_cost; ui "  [8] Help me forget my talents ($TRC gold)" "$K_SYS"
+    if (( ROOM_T )); then ui "  [9] Rooms upstairs - your ${ROOM_NAME[ROOM_T]}, visits" $'\e[1;38;5;180m'
+    else ui "  [9] Rooms upstairs - rent one, or visit a friend" $'\e[1;38;5;180m'; fi
+  fi
   ui ""
   if (( TALK_CONFIRM )); then ui "  Really attack ${N_FULL[$t]}? You will be WANTED. Press [x] again." "$K_HURT"
   else ui "  [x] Attack ${N_FULL[$t]}" "$K_SYS"; fi
@@ -7319,12 +7533,15 @@ ui_shop() {
   done
   ui ""
   junk_value
-  for code in "${INV[@]}"; do [[ $code == *! ]] && continue; item_stats "$code"; total=$(( total + ISELL )); done
+  for code in "${INV[@]}"; do [[ $code == *! || $code == C.* ]] && continue; item_stats "$code"; total=$(( total + ISELL )); done
   ui "  [j] Sell junk (gear worse than yours: $JUNK items)   +${JVAL}g"
-  local lk=0; for code in "${INV[@]}"; do [[ $code == *! ]] && lk=$(( lk + 1 )); done
-  if (( lk )); then ui "  [s] Sell everything but locked items ($(( ${#INV[@]} - lk )) items)   +${total}g"
+  local lk=0; for code in "${INV[@]}"; do [[ $code == *! || $code == C.* ]] && lk=$(( lk + 1 )); done   # (collectables are never sold)
+  if (( lk )); then ui "  [s] Sell everything but locked items and collectables ($(( ${#INV[@]} - lk )) items)   +${total}g"
   else ui "  [s] Sell everything in your bags (${#INV[@]} items)   +${total}g"; fi
-  if [[ $SHOP == @(general|trader|spice) ]]; then fish_value; ui "  [f] Sell all your fish ($FISHN)   +${FISHV}g"; fi
+  if [[ $SHOP == @(general|trader|spice) ]]; then
+    fish_value; ui "  [f] Sell all your fish ($FISHN)   +${FISHV}g"
+    col_dupes; (( ${#DUP[@]} )) && ui "  [c] Sell duplicate collectables (${#DUP[@]})   +${DUPV}g"
+  fi
   ui ""
   [[ $SHOP == smith ]] && ui "  Reforging upgrades the rarity of what you WEAR. It can fail." "$K_SYS"
   ui "  [esc] leave" "$K_SYS"
@@ -7433,12 +7650,12 @@ ui_way() {
 HELP_PG=0
 ui_help() {  # two pages: [<] [>] turn
   if (( HELP_PG == 0 )); then
-  ui "  CONTROLS                                          page 1/3  [>] more" "$B"
+  ui "  CONTROLS                                          page 1/4  [>] more" "$B"
   ui "  w a s d / arrows / h j k l   walk - walk into foes to hit"
   ui "  walk into an NPC to talk  -  f / space attack next to you"
   ui "  1 2 3 skills   e / r potions   u eat   i inventory   y allies"
   ui "  x talents  g fish / gather  p professions  m map  z ride  o achievements"
-  ui "  q quests, questlines, reputation   b bestiary   c chat log"
+  ui "  q quests, questlines, reputation  b bestiary  c chat log  H collection"
   ui "  v graphics   Q quit   enter chat - /p party  /w name msg"
   ui "  /invite /accept /leave /trade name /give name gold|#item /who"
   ui "  THE WORLD" "$B"
@@ -7453,7 +7670,7 @@ ui_help() {  # two pages: [<] [>] turn
   ui "  Bankers (B): your vault + a chest shared by all your heroes."
   ui "  [esc] close" "$K_SYS"
   elif (( HELP_PG == 1 )); then
-  ui "  DEEPER                                       page 2/3  [<] [>] more" "$B"
+  ui "  DEEPER                                       page 2/4  [<] [>] more" "$B"
   ui "  Talents [x]: a point every level, three trees per class, a"
   ui "  capstone at 10 points in a tree. Forget them at any inn."
   ui "  Elements: skills deal fire, frost, poison, shadow, holy or arcane"
@@ -7470,8 +7687,8 @@ ui_help() {  # two pages: [<] [>] turn
   ui "  their quartermaster [6] sells socketed gear and a unique."
   ui "  Quests now also ask you to collect, deliver, scout and hunt bounties."
   ui "  [esc] close   [>] endgame" "$K_SYS"
-  else
-  ui "  ENDGAME                                           page 3/3  [<] back" "$B"
+  elif (( HELP_PG == 2 )); then
+  ui "  ENDGAME                                      page 3/4  [<] [>] more" "$B"
   ui "  Mythic: at level 40 every dungeon gate asks: normal or mythic? Foes are"
   ui "  level 40 and stronger with every key level (+2 to +20); weekly affixes;"
   ui "  beat the clock and your key rises. Pays epic+ gear, perfect gems, valor."
@@ -7484,6 +7701,20 @@ ui_help() {  # two pages: [<] [>] turn
   ui "  Mounts: Hilda sells horses in Hearthmoor. [z] ride, [Z] choose a mount."
   ui "  Achievements and titles: [o]. Professions go to 40; new ore, herbs, fish."
   ui "  Perfect gems: combine three flawless ones at any smith."
+  ui "  [esc] close   [>] your home" "$K_SYS"
+  else
+  ui "  A HOME OF YOUR OWN                                page 4/4  [<] back" "$B"
+  ui "  Every innkeeper rents rooms upstairs [9]: four sizes, a weekly rent, and"
+  ui "  the same room waits for you at every inn. Walk into the furniture:"
+  ui "  the bed makes you Well Rested (more XP from fights for 30 minutes),"
+  ui "  the chest stores items and materials, displays show off your finds,"
+  ui "  the bookshelf opens your collection book, visitors sign the guestbook."
+  ui "  Collectables: 80 of them in six sets - boss trophies, world boss"
+  ui "  trophies, a curio for every land, odd things from fishing and gathering,"
+  ui "  relics of the story. [H] shows what you have found and where the rest is."
+  ui "  Visits: [9] then [v] - your friends must be online. Your door decides"
+  ui "  who may come in: nobody, your party or everybody."
+  ui "  Shops buy collectables you have twice [c]. Lock one [l] to keep it."
   ui "  [esc] close" "$K_SYS"
   fi
 }
@@ -7623,6 +7854,7 @@ render_ui() {   # panels use every column of the frame, the world map is drawn i
     allies) ui_allies ;; allyshop) ui_allyshop ;; story) ui_story ;;
     talents) if (( TL_PAGE )); then ui_paragon; else ui_talents; fi ;; jewel) ui_jewel ;; wares) ui_wares ;; qchoice) ui_qchoice ;;
     dgate) ui_dgate ;; stable) ui_stable ;; valor) ui_valor ;; ach) ui_ach ;;
+    inn) ui_inn ;; visit) ui_visit ;; dsp) ui_dsp ;; book) ui_book ;; guest) ui_guest ;;
   esac
   [[ -n $UI ]] || { MAP_DIRTY=1; return; }
   for (( r = 0; r < VH; r++ )); do
@@ -7697,7 +7929,7 @@ handle_key() {
       quest) quest_key "$k" ;;
       map)   wm_key "$k"; [[ -z $UI ]] && NEED_FULL=1 ;;
       way)   [[ $k == [1-9] ]] && way_travel $(( k - 1 )); [[ $k == 0 ]] && way_travel 9 ;;
-      help)  case $k in '?') UI="" ;; RIGHT|'>'|.|d|l|' ') (( HELP_PG < 2 )) && HELP_PG=$(( HELP_PG + 1 )) ;; LEFT|'<'|,|a|h) (( HELP_PG > 0 )) && HELP_PG=$(( HELP_PG - 1 )) ;; esac ;;
+      help)  case $k in '?') UI="" ;; RIGHT|'>'|.|d|l|' ') (( HELP_PG < 3 )) && HELP_PG=$(( HELP_PG + 1 )) ;; LEFT|'<'|,|a|h) (( HELP_PG > 0 )) && HELP_PG=$(( HELP_PG - 1 )) ;; esac ;;
       beasts)  case $k in
                  b) UI="" ;;
                  RIGHT|'>'|.|d|l|' ') BEAST_PG=$(( BEAST_PG + 1 )) ;;
@@ -7716,6 +7948,10 @@ handle_key() {
       stable)  stable_key "$k" ;;
       valor)   valor_key "$k" ;;
       ach)     if [[ $k == o ]]; then UI=""; else ach_key "$k"; fi ;;
+      inn)     inn_key "$k" ;;
+      visit)   visit_key "$k" ;;
+      dsp)     dsp_key "$k" ;;
+      book)    if [[ $k == H ]]; then UI=""; else book_key "$k"; fi ;;
       jewel)   jewel_key "$k" ;;
       wares)   wares_key "$k" ;;
       qchoice) case $k in 1|a) ql_choose a ;; 2|b) ql_choose b ;; esac ;;
@@ -7749,6 +7985,7 @@ handle_key() {
     z)         mount_toggle ;;
     Z)         STABLE_SRC=keys UI=stable MAP_DIRTY=1 ;;
     o)         UI=ach MAP_DIRTY=1 ;;
+    H)         BOOK_PG=0 UI=book MAP_DIRTY=1 ;;
     '?')       UI=help MAP_DIRTY=1 ;;
     ''|$'\r'|t) CHATTING=1 CHAT_BUF="" ;;
     /)         CHATTING=1 CHAT_BUF="/" ;;
@@ -7762,10 +7999,10 @@ regen() {
   trade_tick
   (( DEAD )) && return
   weather_hazard
-  v3_tick; v45_tick; (( DEAD )) && return
+  v3_tick; v45_tick; v50_tick; (( DEAD )) && return
   rh=$(( MAXHP / 100 + 1 )) rm=$(( MAXMP * 3 / 100 + 1 ))
   (( NOW - last_hurt > 6000 )) && rh=$(( MAXHP * 4 / 100 + 1 ))
-  if [[ $CUR_MAP == W ]] && in_safe_xy "$PX" "$PY"; then rh=$(( rh * 3 )) rm=$(( rm * 2 )); fi
+  if [[ $CUR_MAP == H* ]] || { [[ $CUR_MAP == W ]] && in_safe_xy "$PX" "$PY"; }; then rh=$(( rh * 3 )) rm=$(( rm * 2 )); fi   # towns and rooms
   (( NOW < fed_until )) && { rh=$(( rh * 2 )) rm=$(( rm * 2 )); }
   (( TB_REGEN )) && { rh=$(( rh * (100 + TB_REGEN) / 100 )) rm=$(( rm * (100 + TB_REGEN) / 100 )); }
   if (( HP < MAXHP || MP < MAXMP )); then
@@ -8035,6 +8272,7 @@ active_fx() {  # -> AFX_E AFX_N AFX_T: buffs running right now
   afx "$swift_until" 🐇 "Swiftness"; afx "$buff_until" 📣 "Battle Cry +40% dmg"; afx "$anthem_until" 🎺 "Anthem"
   if (( fed_lvl == 2 )); then afx "$fed_until" 🍲 "Well Fed+ +10% dmg"; else afx "$fed_until" 🍢 "Well Fed"; fi
   afx "$frost_until" 🧊 "Frost Tonic"; afx "$fireward_until" 🧯 "Fire Ward"; afx "$veil_until" 🥽 "Sand Veil"
+  afx "$REST_UNTIL" 😴 "Well Rested +$REST_PCT% XP"                                              # v5.0
 }
 
 # --- tab contents: list rows (LR_*) ------------------------------------------------------------
@@ -8091,6 +8329,8 @@ inv_rows_gear() {  # width
     if [[ $IK == B ]]; then
       rt "$PADS" "$ICOL"
       bag_gain "$IKD"; if (( BG > 0 )); then padr " ▲$BG" 6; rt "$PADS" "1;38;5;84"; else rt " =    " "38;5;242"; fi
+    elif [[ $IK == C ]]; then                   # v5.0: a collectable - for a display, not for wearing
+      rt "$PADS" "$ICOL"; rt " show " "38;5;180"
     elif (( ok )); then
       rt "$PADS" "$ICOL"
       if (( LR_FAST )); then rt "      "
@@ -8238,6 +8478,28 @@ inv_card_bag() {  # code worn-slot ("" = in your bags)
   fi
 }
 
+inv_card_col() {  # code: a collectable (v5.0)
+  local c=$1 k s l
+  item_name "$c" "$CLS"; item_icon "$c" "$CLS"; k=$IKD s=${CL_SET[IKD]}
+  wrapt "$INAME" $(( CDW - (TW2 ? 7 : 0) ))
+  rb; [[ -n $II ]] && rt "$II "; rt "${WRL[0]}" "$ICOL"; cc
+  for l in "${WRL[@]:1}"; do rb; rt "$l" "$ICOL"; cc; done
+  ctext "${RAR_NAME[IRR]} collectable · ${CS_NAME[s]}" "38;5;245"
+  ctext "${CL_FL[k]}" "3;38;5;244"
+  cblank
+  rb; rt "FROM" "1;38;5;220"; cc
+  ctext "${CL_SRC[k]}" "38;5;250"
+  cblank
+  col_count
+  rb; ico "${CS_E[s]}"; rt "$IC"; rt "${CLSD[s]}/${CLST[s]} ${CS_NAME[s]} found" "1;38;5;231"; cc
+  rb; ico 💰; rt "$IC"; rt "sells for ${ISELL}g" "38;5;220"; cc
+  [[ $c == *! ]] && { rb; ico 🔒; rt "$IC"; rt "locked - always kept" "38;5;220"; cc; }
+  cblank
+  if (( ROOM_T )); then ctext "Put it on a display in your room: walk into a display there." "38;5;180"
+  else ctext "Rent a room at any inn [9] and put it on a display for all to see." "38;5;180"; fi
+  ctext "Shops buy the ones you have twice [c]." "38;5;245"
+}
+
 inv_card_gear() {  # id
   local id=$1 c worn=0 s nm col k kn t r v bt cl sell ok l uq fl
   case $id in
@@ -8248,7 +8510,8 @@ inv_card_gear() {  # id
            ctext "Put a bag on with [enter] in your bags. Mara, Garrick, Nadia, Jarl Hrolf and Ser Kael sell them; bosses drop the big ones." "38;5;250"
          fi
          return ;;
-    b:*) c=${INV[${id#b:}]}; [[ $c == B.* ]] && { inv_card_bag "$c" ""; return; } ;;
+    b:*) c=${INV[${id#b:}]}; [[ $c == B.* ]] && { inv_card_bag "$c" ""; return; }
+         [[ $c == C.* ]] && { inv_card_col "$c"; return; } ;;
     e:*) s=${id#e:}; eq_of "$s"; c=$EQC; worn=1 ;;
     *) return ;;
   esac
@@ -8554,6 +8817,10 @@ inv_equip() {  # bag index [quiet]
   (( i < ${#INV[@]} )) || return 1
   c=${INV[i]}; item_name "$c" "$CLS"
   if [[ $IK == B ]]; then [[ $2 == quiet ]] && return 1; bag_equip "$i"; return; fi
+  if [[ $IK == C ]]; then                                      # v5.0
+    [[ $2 == quiet ]] || logm "You can't wear the $INAME - put it on a display in your room (any innkeeper, [9])." "$K_SYS"
+    return 1
+  fi
   if [[ $ICLS != *"$CLS"* ]]; then
     pl=${IKN}s; [[ $IKN == *s ]] && pl=$IKN
     cls_list "$ICLS"; logm "A ${C_NAME[CLS]} can't use $pl - only $CLT. Sell or trade it." "$K_HURT"; return 1
@@ -8608,7 +8875,7 @@ inv_sort() { sort_items INV; logm "Bags sorted by ${SORT_NAME[SORT_M]}." "$K_SYS
 
 sort_items() {  # array name: by SORT_M (type, rarity or value) - things you can use first
   local -n sarr=$1
-  local c k u si ord=WAOHJB lines=() l
+  local c k u si ord=WAOHJBC lines=() l
   for c in "${sarr[@]}"; do
     item_stats "$c"; u=1; [[ $ICLS == *"$CLS"* ]] && u=0
     si=${ord%%"$IK"*}; si=${#si}
@@ -8719,8 +8986,9 @@ sc_save() {
   { echo "ITEMS=${SC_ITEMS[*]}"; echo "GOLD=$SC_G"; echo "MATS=${SC_M[*]}"; } > "$tmp" 2>/dev/null && mv -f "$tmp" "$SC_FILE"
 }
 
-bk_store() {  # BK_TAB -> ST SG SM (variable names) SCAP SNAME
+bk_store() {  # BK_TAB -> ST SG SM (variable names) SCAP SNAME   (tab 2: the chest in your room, v5.0 - no gold)
   if (( BK_TAB == 0 )); then ST=BANK SG=BANKG SM=BANKM SCAP=$BANKCAP SNAME=vault
+  elif (( BK_TAB == 2 )); then ST=ROOMC SG="" SM=ROOMM SCAP=${ROOM_CAP[ROOM_T]:-0} SNAME="room chest"
   else ST=SC_ITEMS SG=SC_G SM=SC_M SCAP=$SC_CAP SNAME="shared chest"; fi
 }
 bk_fresh() { (( BK_TAB == 1 )) && sc_load; bk_store; }            # always work on the newest chest
@@ -8728,6 +8996,7 @@ bk_commit() { save_char; (( BK_TAB == 1 )) && sc_save; MAP_DIRTY=1; }
 
 bank_open() {
   BK_NPC=$TALK_T BK_INPUT="" BK_SIDE=0 BK_CUR=(0 0) BK_TOP=(0 0)
+  (( BK_TAB == 2 )) && BK_TAB=0                                  # (the room chest is only upstairs)
   (( ${#BANKM[@]} )) || { local i; for (( i = 0; i < NMAT; i++ )); do BANKM[i]=0; done; }
   sc_load; UI=bank MAP_DIRTY=1
 }
@@ -8754,7 +9023,8 @@ bk_transfer() {
 
 bk_gold() {  # dep|wd amount ("" = all of it)
   local a=${2:-} have
-  bk_fresh; have=${!SG}
+  bk_fresh; [[ -n $SG ]] || { logm "Gold belongs in the vault - any banker keeps it safe."; return; }
+  have=${!SG}
   [[ -n $a ]] && a=$(( 10#$a ))
   if [[ $1 == dep ]]; then
     [[ -z $a ]] && a=$GOLD; (( a > GOLD )) && a=$GOLD; (( a > 0 )) || { logm "You have no gold to put in."; return; }
@@ -8803,6 +9073,7 @@ bk_sort() {
 
 bk_upgrade() {
   local i cost
+  (( BK_TAB == 2 )) && { logm "A bigger room has a bigger chest - ask any innkeeper [9]."; return; }
   (( BK_TAB == 0 )) || { logm "The shared chest always holds $SC_CAP items."; return; }
   for (( i = 0; i < 3; i++ )); do (( BANKCAP == VAULT_UP[i] )) && break; done
   (( i < 3 )) || { logm "Your vault is as big as it gets ($BANKCAP)."; return; }
@@ -8838,11 +9109,11 @@ bank_key() {
     LEFT|RIGHT|$'\t'|a|d) BK_SIDE=$(( 1 - BK_SIDE )) ;;
     UP|w) bk_move -1 ;;
     DOWN|s) bk_move 1 ;;
-    1) BK_TAB=0 BK_CUR[1]=0 ;;
-    2) BK_TAB=1 BK_CUR[1]=0; sc_load ;;
+    1) (( BK_TAB == 2 )) || BK_TAB=0 BK_CUR[1]=0 ;;
+    2) (( BK_TAB == 2 )) || { BK_TAB=1 BK_CUR[1]=0; sc_load; } ;;
     ''|$'\r'|' '|e) bk_transfer ;;
-    g) BK_INPUT=dep BK_BUF="" ;;
-    t) BK_INPUT=wd BK_BUF="" ;;
+    g) (( BK_TAB == 2 )) || BK_INPUT=dep BK_BUF="" ;;
+    t) (( BK_TAB == 2 )) || BK_INPUT=wd BK_BUF="" ;;
     m) bk_mats in ;;
     n) bk_mats out ;;
     l) bk_lock ;;
@@ -8869,13 +9140,18 @@ bk_row() {  # code width -> RC RP (one cell of a column; narrow columns drop the
 }
 
 ui_bank() {
-  local cw H n0 n1 r i li c top lc lp rc rp bg mk side t g nm k carried=0 stored=0 ck=0 sk=0
-  [[ -n ${CM_T[$TALK_MID]} ]] || { UI=""; return; }
+  local cw H n0 n1 r i li c top lc lp rc rp bg mk side t g=0 nm k carried=0 stored=0 ck=0 sk=0
+  if (( BK_TAB == 2 )); then room_mine || { UI=""; return; }
+  else [[ -n ${CM_T[$TALK_MID]} ]] || { UI=""; return; }; fi
   (( BK_TAB == 1 )) && sc_load
   bk_store; local -n st=$ST sm=$SM
-  g=${!SG}
+  [[ -n $SG ]] && g=${!SG}
   cw=$(( (MW - 5) / 2 ))
   # title + tabs
+  if (( BK_TAB == 2 )); then
+    rb; ico 📦; rt " $IC" "1"; rt "YOUR ROOM CHEST" "1;38;5;220"; rt " · ${ROOM_NAME[ROOM_T]}" "38;5;245"; uxs
+    rb; ico 💰; rt " $IC"; rt "carried " "38;5;245"; rt "$GOLD" "1;38;5;220"; rt "   - only for you, in every inn" "38;5;242"; uxs
+  else
   rb; ico 🏦; rt " $IC" "1"; rt "${N_FULL[$BK_NPC]^^}" "1;38;5;220"
   rt " · ${N_HOME[$BK_NPC]:-}" "38;5;245"; rt "   "
   for i in 0 1; do
@@ -8889,6 +9165,7 @@ ui_bank() {
   rt "   in the $SNAME " "38;5;245"; rt "$g" "1;38;5;220"
   if (( BK_TAB == 0 )); then rt "   - safe when you die" "38;5;242"; else rt "   - every hero on this computer" "38;5;242"; fi
   uxs
+  fi
   t=${BLANK:0:MW}; uix "$K_FRAME${t// /─}$N" "$t"
   # column heads
   rb; rt " YOUR BAGS ${#INV[@]}/$BAGS" "1;38;5;220"; rpad $(( cw + 4 )); rt " ${SNAME^^} ${#st[@]}/$SCAP" "1;38;5;220"
@@ -8936,6 +9213,7 @@ ui_bank() {
     item_name "$c" "$CLS"; item_icon "$c" "$CLS"; bonus_txt
     rb; rt " "; [[ -n $II ]] && rt "$II "; rt "$INAME" "$ICOL"
     if [[ $IK == B ]]; then rt "  bag, $IVAL slots" "38;5;250"
+    elif [[ $IK == C ]]; then rt "  ${CS_NAME[${CL_SET[IKD]}]}" "38;5;180"
     else
       (( IVAL )) && { if [[ $IK == W ]]; then rt "  +$IVAL dmg" "38;5;250"; else rt "  +$IVAL armor" "38;5;250"; fi; }
       [[ -n $BTX ]] && rt "  $BTX" "38;5;117"
@@ -8965,7 +9243,8 @@ ui_bank() {
     if (( BK_TAB == 0 )); then
       for (( i = 0; i < 3; i++ )); do (( BANKCAP == VAULT_UP[i] )) && { t="  [u] +10: ${VAULT_COST[i]}g"; break; }; done
     fi
-    ui "  [g/t] gold in/out  [m/n] materials in/out$t  [esc] leave" "$K_SYS"
+    if (( BK_TAB == 2 )); then ui "  [m/n] materials in/out  [esc] leave" "$K_SYS"
+    else ui "  [g/t] gold in/out  [m/n] materials in/out$t  [esc] leave" "$K_SYS"; fi
   fi
 }
 
@@ -9289,7 +9568,7 @@ V45_VARS=(PARA KEYLV MYBEST VALOR MNT_CUR TITLE DCLR RAIDK RAREK INVK DLYK MYDON
 v45_reset() {  # a new hero
   PARA=0 PARA_P="0 0 0 0 0 0" KEYLV=2 MYBEST=0 VALOR=0 MOUNTS="" MNT_CUR=0 RIDING=0 ACHS="" TITLE=-1
   DAILY="" WEEKLY="" DCLR=0 RAIDK=0 RAREK=0 INVK=0 DLYK=0 MYDONE=0 GEMP=0
-  v45_fix
+  v50_reset; v45_fix
 }
 v45_fix() {
   local i
@@ -9302,7 +9581,7 @@ v45_fix() {
   (( TITLE >= -1 && TITLE < NACH )) || TITLE=-1
   (( TITLE >= 0 )) && [[ ${ACHS:TITLE:1} != 1 ]] && TITLE=-1
   for i in "${!PROF_LV[@]}"; do (( PROF_LV[i] <= PROF_MAX )) || PROF_LV[i]=$PROF_MAX; done
-  dly_fix
+  dly_fix; v50_fix
 }
 v45_load_kv() {  # key value: the lines load_char does not know
   case $1 in
@@ -9311,12 +9590,14 @@ v45_load_kv() {  # key value: the lines load_char does not know
     DAILY|WEEKLY) [[ $2 =~ ^[0-9]{1,7}(\ [0-9]{1,2}:[0-9]{1,6}:[01]){1,3}$ ]] && printf -v "$1" '%s' "$2" ;;
     PARA|KEYLV|MYBEST|VALOR|MNT_CUR|DCLR|RAIDK|RAREK|INVK|DLYK|MYDONE|GEMP) [[ $2 =~ ^[0-9]{1,9}$ ]] && printf -v "$1" '%d' "$(( 10#$2 ))" ;;
     TITLE) [[ $2 =~ ^-?[0-9]{1,3}$ ]] && TITLE=$2 ;;
+    *) v50_load_kv "$1" "$2" ;;                                 # v5.0: housing and collectables
   esac
 }
 v45_save() {  # the lines save_char adds
   local k
   for k in "${V45_VARS[@]}"; do echo "$k=${!k}"; done
   echo "PARA_P=$PARA_P"; echo "MOUNTS=$MOUNTS"; echo "ACHS=$ACHS"; echo "DAILY=$DAILY"; echo "WEEKLY=$WEEKLY"
+  v50_save
 }
 
 # --- professions: tables instead of index ranges ---------------------------------------------------------
@@ -9541,7 +9822,7 @@ ach_ok() {  # index -> 0 if earned
     28) n=${EXPW//0/}; (( ${#n} * 100 >= ${#EXPW} * 80 )) ;;
     29) n=${SEEN//0/}; (( ${#n} >= 200 )) ;;
     30) (( GOLD >= 250000 )) ;; 31) (( GEMP )) ;;
-    *) return 1 ;;
+    *) ach_ok50 "$i" ;;                                         # v5.0
   esac
 }
 ach_check() {  # unlock what is earned (cheap: a few tests per achievement)
@@ -9743,6 +10024,614 @@ ui_dailies() {
   myth_afx
   ui "  MYTHIC   your key: +$KEYLV   best in time: +$MYBEST   valor: $VALOR" "$B"
   ui "  this week: ${MYTH_A[MA]} (+2), ${CHP_NAME[MB]} (+4), ${MYTH_C[MC]} (+7)" "$K_SYS"
+}
+
+# ---------------------------------------------------------------------------
+#  Module 04i - v5.0 client: housing and collectables. A room upstairs at any
+#  inn (rent, four sizes), walked like a little map of its own (H<owner>):
+#  a bed (Well Rested), a chest, displays, a collection book, a guestbook.
+#  Friends visit while the owner is online - the owner's client answers.
+#  Collectables (C.<n>) are found on bosses, in every land, while fishing
+#  and gathering, and along the story.
+# ---------------------------------------------------------------------------
+ROOM_T=0 ROOM_PAID=-1 ROOM_DOOR=1 REST_UNTIL=0 REST_PCT=0 GUESTS="" CLOG=""
+ROOMD=() ROOMC=() ROOMM=()
+V50_VARS=(ROOM_T ROOM_PAID ROOM_DOOR REST_UNTIL REST_PCT)
+declare -A RM_AT=() VIS_INFO=() RM_ANS=()
+RM_F=() RM_DSP=() RM_OWNER="" RM_TIER=0 RM_NCOL=0 RM_SIGNED=0 RM_SX=0 RM_SY=0 RM_NS=0
+VIS_OWNER="" VIS_WANT="" VIS_T=0 DSP_I=0 DSP_CUR=0 BOOK_PG=0
+DOOR_NAME=("locked - nobody comes in" "party - your party may visit" "open - everybody may visit")
+
+v50_reset() {  # a new hero
+  ROOM_T=0 ROOM_PAID=-1 ROOM_DOOR=1 REST_UNTIL=0 REST_PCT=0 GUESTS="" CLOG="" ROOMD=() ROOMC=() ROOMM=()
+  v50_fix
+}
+v50_fix() {
+  local i n
+  (( ROOM_T >= 0 && ROOM_T <= NROOM )) || ROOM_T=0
+  (( ROOM_DOOR >= 0 && ROOM_DOOR <= 2 )) || ROOM_DOOR=1
+  (( REST_PCT <= 40 )) || REST_PCT=0
+  while (( ${#CLOG} < NCOL )); do CLOG+=0; done; CLOG=${CLOG:0:NCOL}
+  n=${ROOM_NDSP[ROOM_T]:-0}
+  ROOMD=("${ROOMD[@]:0:n}"); for (( i = ${#ROOMD[@]}; i < n; i++ )); do ROOMD[i]=-; done
+  ROOMC=("${ROOMC[@]:0:${ROOM_CAP[ROOM_T]:-0}}")
+  for (( i = 0; i < NMAT; i++ )); do ROOMM[i]=${ROOMM[i]:-0}; done
+}
+v50_load_kv() {  # key value: the lines load_char and v45_load_kv do not know
+  local x i=0
+  case $1 in
+    ROOM_T|ROOM_DOOR|REST_PCT) [[ $2 =~ ^[0-9]{1,2}$ ]] && printf -v "$1" '%d' "$(( 10#$2 ))" ;;
+    REST_UNTIL) [[ $2 =~ ^[0-9]{1,14}$ ]] && REST_UNTIL=$(( 10#$2 )) ;;
+    ROOM_PAID) [[ $2 =~ ^(-1|[0-9]{1,7})$ ]] && { if [[ $2 == -1 ]]; then ROOM_PAID=-1; else ROOM_PAID=$(( 10#$2 )); fi; } ;;
+    CLOG)   [[ $2 =~ ^[01]{1,256}$ ]] && CLOG=$2 ;;
+    ROOMD)  ROOMD=(); for x in $2; do if [[ $x == - ]] || valid_item "$x"; then ROOMD+=("$x"); else ROOMD+=(-); fi; done ;;
+    ROOMC)  ROOMC=(); for x in $2; do valid_item "${x%!}" && ROOMC+=("$x"); done ;;
+    ROOMM)  for x in $2; do [[ $x =~ ^[0-9]{1,6}$ ]] && (( i < NMAT )) && ROOMM[i]=$(( 10#$x )); i=$(( i + 1 )); done ;;
+    GUESTS) [[ $2 =~ ^([A-Za-z0-9_-]{1,12}:[0-9]{1,6}( |$)){0,12}$ ]] && GUESTS=$2 ;;
+  esac
+}
+v50_save() {  # the lines save_char adds
+  local k
+  for k in "${V50_VARS[@]}"; do echo "$k=${!k}"; done
+  echo "CLOG=$CLOG"; echo "ROOMD=${ROOMD[*]}"; echo "ROOMC=${ROOMC[*]}"; echo "ROOMM=${ROOMM[*]}"; echo "GUESTS=$GUESTS"
+}
+
+# --- collectables -------------------------------------------------------------------------------------------
+col_has() { [[ ${CLOG:$1:1} == 1 ]]; }                         # index -> 0 if ever found
+col_mark() { col_has "$1" || CLOG="${CLOG:0:$1}1${CLOG:$1+1}"; }
+col_count() {  # -> CLN (found) CLSD[set] (found per set) CLST[set] (all per set) - it only depends on CLOG
+  local i s
+  [[ $CLN_K == "$CLOG" && -n $CLN_K ]] && return
+  CLN_K=$CLOG CLN=0 CLSD=() CLST=()
+  for (( s = 0; s < NCS; s++ )); do CLSD[s]=0 CLST[s]=0; done
+  for (( i = 0; i < NCOL; i++ )); do
+    s=${CL_SET[i]}; CLST[s]=$(( CLST[s] + 1 ))
+    [[ ${CLOG:i:1} == 1 ]] && { CLN=$(( CLN + 1 )) CLSD[s]=$(( CLSD[s] + 1 )); }
+  done
+}
+col_where() {  # index -> CW_AT: where you keep it now ("" = nowhere)
+  local c="C.$1" x
+  CW_AT=""
+  for x in "${ROOMD[@]}"; do [[ $x == "$c" ]] && { CW_AT="on display"; return; }; done
+  for x in "${INV[@]}"; do [[ ${x%!} == "$c" ]] && { CW_AT="in your bags"; return; }; done
+  for x in "${ROOMC[@]}"; do [[ ${x%!} == "$c" ]] && { CW_AT="in your room chest"; return; }; done
+  for x in "${BANK[@]}"; do [[ ${x%!} == "$c" ]] && { CW_AT="in your vault"; return; }; done
+}
+col_scan() {  # everything you hold counts as found (trades, gifts, the vault)
+  local x
+  for x in "${INV[@]}" "${ROOMD[@]}" "${ROOMC[@]}" "${BANK[@]}"; do
+    [[ $x == C.* ]] && { x=${x%!}; x=${x#C.}; [[ $x =~ ^[0-9]+$ ]] && (( x < NCOL )) && col_mark "$x"; }
+  done
+}
+col_pick() {  # set -> CP: a random member, rare ones are rarer; something new is a bit more likely
+  local l=(${COL_SETL[$1]}) i tot r try
+  CP=${l[0]}
+  for try in 1 2; do
+    tot=0; for i in "${l[@]}"; do tot=$(( tot + COL_W[CL_RR[i]] )); done
+    r=$(( RANDOM % tot ))
+    for i in "${l[@]}"; do r=$(( r - COL_W[CL_RR[i]] )); (( r < 0 )) && { CP=$i; break; }; done
+    col_has "$CP" || break
+    (( RANDOM % 2 )) && break
+  done
+}
+col_give() {  # index: a collectable for you
+  local i=$1 c="C.$1" first=1 to="" s=${CL_SET[$1]}
+  col_has "$i" && first=0
+  col_mark "$i"
+  if (( ${#INV[@]} < BAGS )); then INV+=("$c"); NEWG[$c]=1
+  elif (( ROOM_T > 0 && ${#ROOMC[@]} < ROOM_CAP[ROOM_T] )); then ROOMC+=("$c"); to=" Your bags are full - the innkeepers carried it to your room chest."
+  else INV+=("$c"); NEWG[$c]=1; fi                      # too precious to sell: it squeezes in, like a unique
+  item_name "$c" "$CLS"; item_icon "$c" "$CLS"
+  logm "${EMJ[loot]}COLLECTABLE: $II${II:+ }$INAME (${CS_NAME[s]})$to" $'\e['"${ICOL}m"
+  if (( first )); then
+    col_count
+    logm "New for your collection: ${CLSD[s]}/${CLST[s]} ${CS_NAME[s]}, $CLN/$NCOL in all. Show it off in your room!" "$K_ANN"
+    (( CL_RR[i] >= 2 )) && send EVT "$MY_ID" "$MY_NAME" "found the $INAME for their collection!"
+    ach_check
+  fi
+}
+col_kill() {  # monster type champion: trophies from bosses, curios from the creatures of every land
+  local t=$1 ch=${2:-0} i chance
+  i=${COL_BOSS[$t]}
+  if [[ -n $i ]]; then
+    if col_has "$i"; then chance=12; else chance=40; fi
+    (( RANDOM % 100 < chance )) && col_give "$i"
+    return
+  fi
+  if (( M_KIND[t] == 4 )); then                         # treasure chests hide odd things
+    (( RANDOM % 100 < 6 )) && { col_pick $(( 3 + RANDOM % 2 )); col_give "$CP"; }
+    return
+  fi
+  (( M_KIND[t] == 0 )) && [[ $CUR_MAP == W ]] || return
+  in_safe_xy "$PX" "$PY" && return
+  RNAME=""; region_of "$PX" "$PY" nosafe; i=${COL_CUR[$RNAME]}
+  [[ -n $i ]] || return
+  if col_has "$i"; then chance=4; else chance=15; fi    # per thousand
+  (( ch )) && chance=$(( chance * 3 ))
+  (( M_BOSS[t] == 2 )) && chance=$(( chance * 15 ))
+  (( RANDOM % 1000 < chance )) && col_give "$i"
+}
+col_find() { (( RANDOM % 1000 < 30 )) && { col_pick "$1"; col_give "$CP"; }; }   # set: a find while fishing (3) or gathering (4)
+col_story() {  # the story pays a relic every sixth chapter (old heroes get theirs at once)
+  local i
+  for i in ${COL_SETL[5]}; do
+    (( STORY >= CL_REF[i] )) && ! col_has "$i" && col_give "$i"
+  done
+}
+col_dupes() {  # -> DUP (indexes in INV) DUPV (what they sell for): unlocked collectables you already own once
+  local i c held=" "
+  DUP=() DUPV=0
+  for c in "${ROOMD[@]}" "${ROOMC[@]}" "${BANK[@]}"; do [[ $c == C.* ]] && held+="${c%!} "; done   # displayed and stored ones are keepers
+  for c in "${INV[@]}"; do [[ $c == C.*! ]] && held+="${c%!} "; done                               # and so are locked ones
+  for i in "${!INV[@]}"; do
+    c=${INV[i]}; [[ $c == C.* && $c != *! ]] || continue
+    if [[ $held == *" $c "* ]]; then DUP+=("$i"); item_stats "$c"; DUPV=$(( DUPV + ISELL ))
+    else held+="$c "; fi                                                  # the first copy in your bags stays
+  done
+}
+
+# --- the room: building it, walking in and out ----------------------------------------------------------------
+room_map() { RMAP="H$(( 16#$1 ))"; }                           # owner id -> RMAP (the map name everybody uses)
+room_build() {  # map tier -> MAPROW, RM_F ("kind x y slot"), RM_AT, RM_SX RM_SY (just inside the door), RM_NS
+  local rows r y x c row n=0 s=0 IFS=/
+  rows=(${ROOM_LAY[$2]})
+  IFS=$' \t\n'
+  RM_F=() RM_AT=()
+  for (( y = 0; y < ${#rows[@]}; y++ )); do
+    r=${rows[y]} row=""
+    for (( x = 0; x < ${#r}; x++ )); do
+      c=${r:x:1}
+      case $c in
+        '#') row+='#' ;;
+        '<') row+='<'; RM_SX=$x RM_SY=$(( y - 1 )) ;;
+        .)   row+=_ ;;
+        *)   row+=+; RM_AT["$x,$y"]=$n
+             if [[ $c == D ]]; then RM_F[n]="D $x $y $s"; s=$(( s + 1 )); else RM_F[n]="$c $x $y -"; fi
+             n=$(( n + 1 )) ;;
+      esac
+    done
+    MAPROW["$1:$y"]=$row
+  done
+  MAPW[$1]=${#rows[0]} MAPH[$1]=${#rows[@]} RM_NS=$s
+}
+dsp_look() {  # code -> DLE (HD sprite) DLG (ASCII glyph) DLC (color)
+  item_stats "$1"; item_name "$1" "$CLS"
+  DLC=$ICOL DLE=$IKE
+  if [[ $IK == C ]]; then DLG=${CL_G[IKD]}
+  elif [[ -n $IUQ ]]; then DLG='*'
+  else case $IK in W) DLG=/ ;; A) DLG=']' ;; O) DLG=')' ;; H) DLG='^' ;; J) DLG='"' ;; *) DLG=b ;; esac; fi
+  [[ $DLE == ?' ' ]] && DLE="${DLE:0:1} "                       # narrow sprites keep their padding
+}
+room_glyphs() {  # the sprites of all furniture, from what stands on the displays
+  local i a k c e g col
+  for i in "${!RM_F[@]}"; do
+    a=(${RM_F[i]}); k=${a[0]}
+    if [[ $k == D ]]; then
+      c=${RM_DSP[a[3]]:--}
+      if [[ $c == - ]]; then e=${FURN_E[D]} g=${FURN_G[D]} col=${FURN_C[D]}
+      else dsp_look "$c"; e=$DLE g=$DLG col=$DLC; fi
+      GLYH[h$i]=$'\e[0;48;5;'"${RM_PED}m$e"
+    else
+      e=${FURN_E[$k]} g=${FURN_G[$k]} col=${FURN_C[$k]}; GLYH[h$i]=$e
+    fi
+    GLY[h$i]=$'\e[0;'"${col}m$g"
+  done
+  MAP_DIRTY=1
+}
+room_overlay() {  # cx0 cy0: furniture into the frame (called by render_map)
+  local i a dx dy
+  for i in "${!RM_F[@]}"; do
+    a=(${RM_F[i]}); dx=$(( a[1] - $1 )) dy=$(( a[2] - $2 ))
+    (( dx >= 0 && dx < VW && dy >= 0 && dy < VH )) && RI[dy]+="$(( dx * 10 + 3 )):1:h$i "
+  done
+}
+room_go() {  # owner-id tier "displays": walk up into a room (from the open world only)
+  [[ $CUR_MAP == W ]] || return
+  (( DEAD )) && return
+  room_map "$1"
+  WX=$PX WY=$PY                                            # where the stairs bring you back down
+  mount_off quiet; FISH_ST=0 GATH_MID=""
+  room_build "$RMAP" "$2"; drop_vrows "$RMAP"
+  RM_OWNER=$1 RM_TIER=$2 RM_DSP=($3) RM_SIGNED=0
+  CUR_MAP=$RMAP CUR_DT=-1 PX=$RM_SX PY=$RM_SY UI="" clear_until=0
+  cm_clear; set_palette -2; room_glyphs
+  POS_DIRTY=1 MAP_DIRTY=1 NEED_FULL=1
+  (( ALLY >= 0 )) && aly_place
+}
+room_leave() {  # [text]: back down to the taproom
+  [[ $CUR_MAP == H* ]] || return
+  leave_instance quiet
+  logm "${1:-You go back down to the taproom.}" "$K_SYS"
+}
+room_left() { RM_F=() RM_AT=() RM_DSP=() RM_OWNER="" VIS_OWNER="" VIS_WANT=""; }   # (leave_instance calls it)
+room_mine() { [[ $CUR_MAP == H* && $RM_OWNER == "$MY_ID" ]]; }
+room_shown() { local x; RSH=0; for x in "${ROOMD[@]}"; do [[ $x != - ]] && RSH=$(( RSH + 1 )); done; }   # -> RSH
+
+# --- renting -----------------------------------------------------------------------------------------------------
+rent_week() { RWK=$(( (NOW / 86400000 + 3) / 7 )); }            # weeks start on Monday, like the mythic affixes
+room_pay() {  # -> 0 if this week's rent is paid (pays it now if it can)
+  local r=${ROOM_RENT[ROOM_T]}
+  rent_week
+  (( ROOM_PAID >= RWK )) && return 0
+  if (( GOLD >= r )); then GOLD=$(( GOLD - r )); logm "${EMJ[gold]}You pay this week's rent: ${r}g." "$K_LOOT"
+  elif (( BANKG >= r )); then BANKG=$(( BANKG - r )); logm "${EMJ[gold]}This week's rent (${r}g) comes out of your vault." "$K_LOOT"
+  else logm "This week's rent is ${r}g and you can't pay it. Your things are safe - come back with the gold." "$K_HURT"; return 1; fi
+  ROOM_PAID=$RWK; save_char
+}
+room_rent() {  # tier: move in, or move up to a bigger room (everything moves along)
+  local t=$1 cost first=0
+  (( t >= 1 && t <= NROOM )) || return 1
+  if (( t == ROOM_T )); then logm "That is your room already." "$K_SYS"; return 1; fi
+  if (( t < ROOM_T )); then logm "Your ${ROOM_NAME[ROOM_T]} is bigger - the guild does not move anybody down." "$K_SYS"; return 1; fi
+  (( LVL >= ROOM_LVL[t] )) || { logm "The ${ROOM_NAME[t]} is kept for heroes of level ${ROOM_LVL[t]} and up." "$K_HURT"; return 1; }
+  cost=$(( ROOM_COST[t] - ROOM_COST[ROOM_T] ))
+  (( GOLD >= cost )) || { logm "The ${ROOM_NAME[t]} costs ${cost}g to move in (you have $GOLD)." "$K_HURT"; return 1; }
+  (( ROOM_T == 0 )) && first=1
+  GOLD=$(( GOLD - cost )) ROOM_T=$t
+  rent_week; ROOM_PAID=$RWK
+  v50_fix
+  if (( first )); then logm "🔑 The key to your ${ROOM_NAME[t]} is yours! Any innkeeper takes you up - [9] when you talk to them." "$K_ANN"
+  else logm "🔑 You move up into the ${ROOM_NAME[t]}. Your things are already there." "$K_ANN"; fi
+  send EVT "$MY_ID" "$MY_NAME" "rents the ${ROOM_NAME[t]} at the inn!"
+  ach_check; save_char
+}
+room_home() {  # go up to my own room
+  (( ROOM_T )) || { logm "You have no room yet - rent one here first." "$K_SYS"; return; }
+  room_pay || return
+  room_go "$MY_ID" "$ROOM_T" "${ROOMD[*]}"
+  logm "You climb the stairs to your ${ROOM_NAME[ROOM_T]}. Walk into things to use them." "$K_GOOD"
+  room_bcast
+}
+door_next() { ROOM_DOOR=$(( (ROOM_DOOR + 1) % 3 )); logm "Your door: ${DOOR_NAME[ROOM_DOOR]}." "$K_SYS"; save_char; room_bcast; }
+
+# --- inside: the furniture ---------------------------------------------------------------------------------------
+room_use() {  # furniture index
+  local a=(${RM_F[$1]}) k who=${OP_NAME[$RM_OWNER]:-someone}
+  k=${a[0]}
+  case $k in
+    B) if room_mine; then room_sleep; else logm "That is $who's bed. Better not."; fi ;;
+    C) if room_mine; then room_chest; else logm "$who's chest is locked. Of course it is."; fi ;;
+    D) if room_mine; then DSP_I=${a[3]} DSP_CUR=0 UI=dsp
+       else dsp_examine "${a[3]}"; fi ;;
+    K) if room_mine; then BOOK_PG=0 UI=book; else logm "$who's collection book: $RM_NCOL of $NCOL collectables found."; fi ;;
+    G) if room_mine; then UI=guest; else room_sign; fi ;;
+    *) logm "${FURN_SAY[$k]}" ;;
+  esac
+  MAP_DIRTY=1
+}
+room_sleep() {
+  room_shown
+  local p=$(( ROOM_REST[ROOM_T] + (RSH / 4 > 10 ? 10 : RSH / 4) ))
+  REST_PCT=$p REST_UNTIL=$(( NOW + REST_MS ))
+  rest "You sleep in your own bed and wake up Well Rested: +$p% experience from fights for 30 minutes."
+  save_char
+}
+room_chest() {
+  BK_TAB=2 BK_INPUT="" BK_SIDE=0 BK_CUR=(0 0) BK_TOP=(0 0)
+  UI=bank MAP_DIRTY=1
+}
+dsp_examine() {  # slot (a visitor looks at a display)
+  local c=${RM_DSP[$1]:--}
+  if [[ $c == - ]]; then logm "An empty display."; return; fi
+  item_name "$c" "$CLS"; item_icon "$c" "$CLS"
+  if [[ $IK == C ]]; then logm "On display: $II${II:+ }$INAME - ${CS_NAME[${CL_SET[IKD]}]}. \"${CL_FL[IKD]}\"" $'\e['"${ICOL}m"
+  else bonus_txt; logm "On display: $II${II:+ }$INAME${IVAL:+ (+$IVAL)}${BTX:+, $BTX}" $'\e['"${ICOL}m"; fi
+}
+dsp_put() {  # slot bag-index: put something on a display (what stood there goes back into your bags)
+  local s=$1 i=$2 c old
+  c=${INV[i]}; [[ -n $c ]] || return 1
+  old=${ROOMD[s]:--}
+  unset "INV[i]"; INV=("${INV[@]}"); unset "NEWG[${c%!}]"
+  ROOMD[s]=${c%!}
+  [[ $old != - ]] && INV+=("$old")
+  item_name "$c" "$CLS"; logm "You put the $INAME on display." "$K_GOOD"
+  room_refresh
+}
+dsp_take() {  # slot
+  local s=$1 c=${ROOMD[$1]:--}
+  [[ $c != - ]] || return 1
+  (( ${#INV[@]} < BAGS )) || { logm "Your bags are full." "$K_HURT"; return 1; }
+  INV+=("$c"); ROOMD[s]=-
+  item_name "$c" "$CLS"; logm "You take the $INAME back." "$K_SYS"
+  room_refresh
+}
+room_refresh() {  # my displays changed: redraw, tell visitors, save
+  room_mine && { RM_DSP=("${ROOMD[@]}"); room_glyphs; }
+  room_bcast; ach_check; save_char
+}
+
+# --- the guestbook ------------------------------------------------------------------------------------------------
+guest_add() {  # name: newest first, everybody once, twelve at most
+  local n=$1 e out="$1:$(( NOW / 86400000 ))" k=1
+  for e in $GUESTS; do
+    [[ ${e%%:*} == "$n" ]] && continue
+    (( k >= 12 )) && break
+    out+=" $e"; k=$(( k + 1 ))
+  done
+  GUESTS=$out
+}
+room_sign() {
+  (( RM_SIGNED )) && { logm "You already signed it."; return; }
+  RM_SIGNED=1
+  send RSIGN "$MY_ID" "$MY_NAME" "$RM_OWNER"
+  logm "You sign ${OP_NAME[$RM_OWNER]:-the owner}'s guestbook." "$K_GOOD"
+}
+
+# --- visiting (player to player, through the hub) ---------------------------------------------------------------
+room_list() { local IFS=,; RLIST="${ROOMD[*]}"; }              # -> RLIST "C.5,-,U.3"
+door_lets() {  # id -> 0 if my door lets that player in
+  (( ROOM_T )) || return 1
+  case $ROOM_DOOR in 2) return 0 ;; 1) in_party "$1" ;; *) return 1 ;; esac
+}
+room_bcast() {  # tell everybody in my room what it looks like now (tier 0: the door closed)
+  local id here=0 t=$ROOM_T
+  (( ROOM_T )) || return
+  room_map "$MY_ID"
+  for id in "${!OP_MAP[@]}"; do [[ ${OP_MAP[$id]} == "$RMAP" ]] && here=1; done
+  (( here )) || return
+  (( ROOM_DOOR == 0 )) && t=0
+  col_count; room_list
+  send ROOM "$MY_ID" "$MY_NAME" '*' "$t" "$CLN" "$RLIST"
+}
+visit_ask() { VIS_INFO=() VIS_T=$NOW UI=visit MAP_DIRTY=1; send RASK "$MY_ID" "$MY_NAME"; }
+visit_go() {  # owner id
+  [[ -n ${OP_NAME[$1]} ]] || return
+  VIS_WANT=$1
+  send RREQ "$MY_ID" "$MY_NAME" "$1"
+  logm "You ask the innkeeper to take you up to ${OP_NAME[$1]}'s room..." "$K_SYS"
+}
+room_msg() {  # typ from name b c d e  (cli_line hands over RASK RHAS RREQ ROOM RNO RSIGN)
+  local typ=$1 from=$2 nm=$3 b=$4 c=$5 d=$6 e=$7 x l=() ok=() n
+  if [[ $typ == @(RASK|RREQ|RSIGN) ]]; then                       # what makes me answer: once a second per player
+    (( NOW - ${RM_ANS[$from:$typ]:-0} >= 1000 )) || return
+    RM_ANS[$from:$typ]=$NOW; (( ${#RM_ANS[@]} > 200 )) && RM_ANS=()
+  fi
+  case $typ in
+    RASK) door_lets "$from" || return
+          room_shown; col_count
+          send RHAS "$MY_ID" "$MY_NAME" "$from" "$ROOM_T" "$RSH" "$CLN" ;;
+    RHAS) [[ $b == "$MY_ID" ]] && [[ $c =~ ^[1-4]$ ]] && isnum "$d" && isnum "$e" || return
+          (( d <= 99 && e <= NCOL )) || return
+          VIS_INFO[$from]="$c $d $e"; MAP_DIRTY=1 ;;
+    RREQ) [[ $b == "$MY_ID" ]] || return
+          if (( ! ROOM_T )); then send RNO "$MY_ID" "$MY_NAME" "$from" none
+          elif ! door_lets "$from"; then x=locked; (( ROOM_DOOR )) && x=party; send RNO "$MY_ID" "$MY_NAME" "$from" "$x"
+          else
+            col_count; room_list
+            send ROOM "$MY_ID" "$MY_NAME" "$from" "$ROOM_T" "$CLN" "$RLIST"
+            logm "$nm comes up to visit your ${ROOM_NAME[ROOM_T]}." "$K_PARTY"
+          fi ;;
+    RNO)  [[ $b == "$MY_ID" && $VIS_WANT == "$from" ]] || return
+          VIS_WANT=""
+          case $c in
+            none)  logm "$nm has no room at the inn." "$K_SYS" ;;
+            party) logm "$nm's door only opens for their party." "$K_SYS" ;;
+            *)     logm "$nm's door is locked." "$K_SYS" ;;
+          esac ;;
+    ROOM) [[ $c =~ ^[0-4]$ ]] && isnum "$d" || return
+          (( d <= NCOL )) || d=0
+          n=${ROOM_NDSP[c]:-0}
+          IFS=, read -r -a l <<< "$e"
+          for x in "${l[@]:0:n}"; do if [[ $x == - ]] || valid_item "$x"; then ok+=("$x"); else ok+=(-); fi; done
+          while (( ${#ok[@]} < n )); do ok+=(-); done
+          if [[ $b == "$MY_ID" && $VIS_WANT == "$from" ]]; then          # the door opens for me
+            VIS_WANT=""
+            (( c )) || return
+            [[ $CUR_MAP == W ]] || return
+            room_go "$from" "$c" "${ok[*]}"; VIS_OWNER=$from RM_NCOL=$d
+            logm "You step into $nm's ${ROOM_NAME[c]}. Walk into the displays to look at them - and sign the guestbook!" "$K_GOOD"
+          elif [[ $b == '*' && $VIS_OWNER == "$from" ]]; then           # the owner changed something
+            room_map "$from"; [[ $CUR_MAP == "$RMAP" ]] || return
+            if (( c == 0 )); then room_leave "$nm closed the door - the innkeeper shows you out."; return; fi
+            if (( c != RM_TIER )); then
+              local ox=$PX oy=$PY
+              room_build "$RMAP" "$c"; drop_vrows "$RMAP"; RM_TIER=$c
+              p_walk "$RMAP" "$ox" "$oy" && [[ -z ${RM_AT[$ox,$oy]} ]] && PX=$ox PY=$oy || { PX=$RM_SX PY=$RM_SY; }
+              NEED_FULL=1
+            fi
+            RM_DSP=("${ok[@]}") RM_NCOL=$d; room_glyphs
+          fi ;;
+    RSIGN) [[ $b == "$MY_ID" ]] && (( ROOM_T )) || return
+           room_map "$MY_ID"; [[ ${OP_MAP[$from]} == "$RMAP" ]] || return     # only people who stand in my room
+           guest_add "$nm"; logm "📒 $nm signed your guestbook!" "$K_PARTY"; save_char; ach_check ;;
+  esac
+}
+
+# --- achievements (index ACH50 and up) -------------------------------------------------------------------------------
+ach_ok50() {
+  local j=$(( $1 - ACH50 )) s
+  case $j in
+    0) (( ROOM_T >= 1 )) ;; 1) (( ROOM_T >= 4 )) ;;
+    2|3|4) col_count; case $j in 2) (( CLN >= 20 )) ;; 3) (( CLN >= 50 )) ;; *) (( CLN >= NCOL )) ;; esac ;;
+    5|6|7|8|9|10) s=$(( j - 5 )); col_count; (( CLSD[s] >= CLST[s] )) ;;
+    11) room_shown; (( RSH >= 20 )) ;;
+    12) set -- $GUESTS; (( $# >= 5 )) ;;
+    *) return 1 ;;
+  esac
+}
+
+v50_tick() {  # once a second
+  if (( NOW - ${COL_T:-0} >= 5000 )); then COL_T=$NOW; col_scan; col_story; fi
+  if [[ -n $VIS_OWNER && -z ${OP_NAME[$VIS_OWNER]} ]]; then room_leave "Your host has left the world - the innkeeper shows you out."; fi
+  [[ -n $VIS_WANT ]] && [[ -z ${OP_NAME[$VIS_WANT]} ]] && VIS_WANT=""
+}
+
+# ---------------------------------------------------------------------------
+#  Module 05f - v5.0 screens: the rooms at the inn (renting, the door,
+#  visiting), a display in your room, the collection book, the guestbook.
+# ---------------------------------------------------------------------------
+
+# --- the innkeeper: rooms upstairs -------------------------------------------------------------------------------
+ui_inn() {
+  local i cost col st wide=0
+  (( MW >= 70 && VH >= 23 )) && wide=1
+  rent_week
+  ui "  ROOMS AT THE INN" "$K_LOOT$B"
+  ui "  Every inn of the realm keeps your room ready for you." "$K_SYS"
+  ui ""
+  if (( ROOM_T )); then
+    room_shown
+    ui "  Your ${ROOM_NAME[ROOM_T]}: $RSH/${ROOM_NDSP[ROOM_T]} on display, chest ${#ROOMC[@]}/${ROOM_CAP[ROOM_T]}" "$B"
+    if (( ROOM_PAID >= RWK )); then ui "  Rent ${ROOM_RENT[ROOM_T]}g a week - paid for this week." "$K_GOOD"
+    else ui "  Rent ${ROOM_RENT[ROOM_T]}g a week - due when you go up." "$K_LOOT"; fi
+    ui "  [1] Go up to my room" "$K_GOOD$B"
+  else
+    ui "  Rent a room: a bed to wake up Well Rested, a chest" "$K_CHAT"
+    ui "  and displays to show off your treasures." "$K_CHAT"
+  fi
+  ui ""
+  for (( i = 1; i <= NROOM; i++ )); do
+    cost=$(( ROOM_COST[i] - ROOM_COST[ROOM_T] ))
+    if (( i == ROOM_T )); then st="your room" col=$K_GOOD
+    elif (( i < ROOM_T )); then st="smaller than yours" col=$K_SYS
+    elif (( LVL < ROOM_LVL[i] )); then st="from level ${ROOM_LVL[i]}" col=$K_SYS
+    else
+      st="${cost}g + ${ROOM_RENT[i]}g/week"; (( ROOM_T )) && st="move up: ${cost}g"
+      col=$K_CHAT; (( GOLD >= cost )) || col=$K_HURT
+    fi
+    printf -v PF '  [%d] %-12s %s' $(( i + 1 )) "${ROOM_NAME[i]}" "$st"
+    ui "$PF" "$col"
+    printf -v PF '      %d displays, chest %d, rested +%d%%' "${ROOM_NDSP[i]}" "${ROOM_CAP[i]}" "${ROOM_REST[i]}"
+    ui "$PF" "$K_SYS"
+    (( wide )) && ui "      ${ROOM_DESC[i]}" "$K_SYS"
+  done
+  ui ""
+  (( ROOM_T )) && ui "  [d] door: ${DOOR_NAME[ROOM_DOOR]}"
+  ui "  [v] visit a friend's room   [esc] back" "$K_SYS"
+}
+inn_key() {
+  case $1 in
+    1) room_home ;;
+    [2-5]) room_rent $(( $1 - 1 )) ;;
+    d) (( ROOM_T )) && door_next ;;
+    v) visit_ask ;;
+  esac
+}
+
+# --- visiting: who has a room for me? -----------------------------------------------------------------------------------
+visit_list() {  # -> VIS_L: the owners who answered, sorted by name
+  local id l=() s
+  for id in "${!VIS_INFO[@]}"; do [[ -n ${OP_NAME[$id]} ]] && l+=("${OP_NAME[$id],,} $id"); done
+  VIS_L=()
+  (( ${#l[@]} )) || return
+  while read -r s id; do VIS_L+=("$id"); done < <(printf '%s\n' "${l[@]}" | sort)
+}
+ui_visit() {
+  local i id a
+  visit_list
+  ui "  VISIT A ROOM" "$K_LOOT$B"
+  ui "  Whose door is open to you? (they must be online)" "$K_SYS"
+  ui ""
+  for (( i = 0; i < ${#VIS_L[@]} && i < 9; i++ )); do
+    id=${VIS_L[i]} a=(${VIS_INFO[$id]})
+    ui "  [$(( i + 1 ))] ${OP_NAME[$id]}'s ${ROOM_NAME[a[0]]}" "$K_CHAT$B"
+    ui "      ${a[1]} on display, ${a[2]}/$NCOL collectables found" "$K_SYS"
+  done
+  if (( ! ${#VIS_L[@]} )); then
+    if (( NOW - VIS_T < 3000 )); then ui "  The innkeeper asks around the taproom..." "$K_SYS"
+    else ui "  Nobody's door is open to you right now." "$K_SYS"; fi
+  fi
+  ui ""
+  ui "  [1-9] knock   [r] ask again   [esc] back" "$K_SYS"
+}
+visit_key() {
+  case $1 in
+    [1-9]) visit_list; local id=${VIS_L[$(( $1 - 1 ))]}; [[ -n $id ]] && { visit_go "$id"; UI=""; } ;;
+    r) visit_ask ;;
+  esac
+}
+
+# --- a display in my room -------------------------------------------------------------------------------------------------
+dsp_row() {  # code -> RC RP: icon, name, what it is
+  local c=$1
+  rb; item_name "$c" "$CLS"; item_icon "$c" "$CLS"
+  [[ -n $II ]] && rt "$II "
+  rt "$INAME" "$ICOL"
+  if [[ $IK == C ]]; then rt "  ${CS_NAME[${CL_SET[IKD]}]}" "38;5;245"
+  elif [[ $IK == B ]]; then rt "  bag" "38;5;245"
+  else rt "  ${RAR_NAME[IRR],,} ${SLOT_LABEL[$IK],,}" "38;5;245"; fi
+}
+ui_dsp() {
+  local i n=${#INV[@]} H top c mk
+  room_mine || { UI=""; return; }
+  ui "  DISPLAY $(( DSP_I + 1 )) OF ${ROOM_NDSP[ROOM_T]}" "$K_LOOT$B"
+  c=${ROOMD[DSP_I]:--}
+  if [[ $c == - ]]; then ui "  It is empty." "$K_SYS"
+  else dsp_row "$c"; RC=$'\e[0§m'"  on it: $RC" RP="  on it: $RP"; uxs; ui "  [t] take it back into your bags" "$K_SYS"; fi
+  ui ""
+  ui "  PUT SOMETHING ON IT - from your bags" "$B"
+  H=$(( VH - 8 )); (( H < 3 )) && H=3
+  (( DSP_CUR >= n )) && DSP_CUR=$(( n - 1 )); (( DSP_CUR < 0 )) && DSP_CUR=0
+  top=$(( DSP_CUR - H / 2 )); (( top > n - H )) && top=$(( n - H )); (( top < 0 )) && top=0
+  (( n )) || ui "  (your bags are empty)" "$K_SYS"
+  for (( i = top; i < n && i < top + H; i++ )); do
+    dsp_row "${INV[i]}"
+    if (( i == DSP_CUR )); then mk=$'\e[0;1;38;5;226m▶ '; else mk="  "; fi
+    RC="$mk$RC" RP="  $RP"; uxs
+  done
+  ui ""
+  ui "  [↑↓] choose  [enter] put it on display  [esc] done" "$K_SYS"
+}
+dsp_key() {
+  case $1 in
+    UP|w) (( DSP_CUR > 0 )) && DSP_CUR=$(( DSP_CUR - 1 )) ;;
+    DOWN|s) (( DSP_CUR < ${#INV[@]} - 1 )) && DSP_CUR=$(( DSP_CUR + 1 )) ;;
+    ''|$'\r'|' '|e) dsp_put "$DSP_I" "$DSP_CUR" ;;
+    t) dsp_take "$DSP_I" ;;
+  esac
+}
+
+# --- the collection book -----------------------------------------------------------------------------------------------------
+ui_book() {
+  local s i L=() P=() per pages first last e nm st col
+  col_count
+  for (( s = 0; s < NCS; s++ )); do
+    if (( TW2 )); then e="${CS_E[s]} "; else e=""; fi
+    L+=("  $K_LOOT$B$e${CS_NAME[s]^^}$N $K_SYS${CLSD[s]}/${CLST[s]} - ${CS_HOW[s]}$N")
+    P+=("  $e${CS_NAME[s]^^} ${CLSD[s]}/${CLST[s]} - ${CS_HOW[s]}")
+    for i in ${COL_SETL[s]}; do
+      if col_has "$i"; then
+        col_where "$i"; st=${CW_AT:-found, not kept}
+        col=${RAR_COL[${CL_RR[i]}]}; [[ -z $CW_AT ]] && col="38;5;245"
+        if (( TW2 )); then e="${CL_E[i]} "; else e="${CL_G[i]} "; fi
+        printf -v nm '%-30s' "${CL_NAME[i]}"
+        L+=("    $e"$'\e['"${col}m$nm$N $K_SYS$st$N"); P+=("    $e$nm $st")
+      else
+        if (( TW2 )); then e="❔ "; else e="? "; fi
+        L+=("    $e$K_SYS??? - ${CL_SRC[i]}$N"); P+=("    $e??? - ${CL_SRC[i]}")
+      fi
+    done
+  done
+  per=$(( VH - 3 )); (( per < 5 )) && per=5
+  pages=$(( (${#L[@]} + per - 1) / per ))
+  (( BOOK_PG >= pages )) && BOOK_PG=$(( pages - 1 )); (( BOOK_PG < 0 )) && BOOK_PG=0
+  first=$(( BOOK_PG * per )) last=$(( first + per ))
+  ui "  COLLECTION BOOK  $CLN/$NCOL found   page $(( BOOK_PG + 1 ))/$pages  [<][>] turn  [esc]" "$K_LOOT$B"
+  ui ""
+  for (( i = first; i < last && i < ${#L[@]}; i++ )); do uix "${L[i]}" "${P[i]}"; done
+}
+book_key() {
+  case $1 in
+    RIGHT|'>'|.|d|l|' ') BOOK_PG=$(( BOOK_PG + 1 )) ;;
+    LEFT|'<'|,|a|h) (( BOOK_PG > 0 )) && BOOK_PG=$(( BOOK_PG - 1 )) ;;
+  esac
+}
+
+# --- the guestbook --------------------------------------------------------------------------------------------------------------
+ui_guest() {
+  local e n d today=$(( NOW / 86400000 )) k=0
+  set -- $GUESTS
+  ui "  YOUR GUESTBOOK   $# signature(s)   [esc] close" "$K_LOOT$B"
+  ui ""
+  (( $# )) || ui "  Nobody has signed it yet. Invite your friends up!" "$K_SYS"
+  for e in "$@"; do
+    n=${e%%:*} d=$(( today - ${e#*:} ))
+    if (( d <= 0 )); then d="today"; elif (( d == 1 )); then d="yesterday"; else d="$d days ago"; fi
+    printf -v PF '  %-14s %s' "$n" "$d"; ui "$PF" "$K_CHAT"
+    k=$(( k + 1 )); (( k >= VH - 5 )) && break
+  done
+  ui ""
+  ui "  Visitors sign it when they walk into it." "$K_SYS"
 }
 
 # ---------------------------------------------------------------------------

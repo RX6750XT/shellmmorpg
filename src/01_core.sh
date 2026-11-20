@@ -19,6 +19,8 @@
 #  sockets, 19 questlines with choices and eight factions. Since 4.5: mythic
 #  dungeons, a raid, invasions, valor, mounts, paragon levels, dailies,
 #  achievements and titles - and professions and gems up to level 40.
+#  Since 5.0: a room of your own at every inn - rent it, sleep in it, store
+#  things in it, show off 80 collectables on its displays, invite friends.
 #
 #  Hosting needs python3, socat or ncat (force one: SHELLMMO_HUB=socat).
 #  Joining needs nothing but bash. Characters are saved in ~/.shellmmorpg/
@@ -28,7 +30,7 @@
 #  This file is built from src/*.sh and world.txt by build.sh - edit those.
 # ============================================================================
 
-VERSION="4.5"
+VERSION="5.0"
 DATA_DIR="${SHELLMMO_DIR:-$HOME/.shellmmorpg}"
 SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
 # string lengths must count characters, not bytes (emoji graphics): make sure we run in a UTF-8 locale
@@ -398,8 +400,9 @@ slot_kinds() {  # slot -> KCLS (classes per kind) KCNT
   KCNT=${#KCLS[@]}
 }
 
-valid_item() {  # code -> 0 if it is well-formed gear (or a bag, or a unique)
+valid_item() {  # code -> 0 if it is well-formed gear (or a bag, a unique, a collectable)
   [[ $1 =~ ^B\.[0-5]$ ]] && return 0
+  [[ $1 =~ ^C\.(0|[1-9][0-9]?)$ ]] && { (( BASH_REMATCH[1] < NCOL )); return; }    # v5.0: collectables
   [[ $1 =~ ^U\.(0|[1-9][0-9]?)$ ]] && { (( BASH_REMATCH[1] < NUQ )); return; }
   [[ $1 =~ ^([WAOHJ])\.(0|[1-9][0-9]?)\.([1-9]|1[0-2])\.([0-3])(\.(__|[rseato][1-4]){1,3})?$ ]] || return 1   # v3.0: sockets, v4.0: tiers 10-12, v4.5: perfect gems
   local k=${BASH_REMATCH[2]}
@@ -425,6 +428,11 @@ item_stats() {  # code -> IK IKD IT IRR IVAL (dmg/armor) IBT IBV (bonus) ICLS IK
   if [[ $IK == B ]]; then                                            # bags (v1.8)
     IT=1 IRR=${BAG_RR[IKD]:-0} IVAL=${BAG_SZ[IKD]:-4} IBT="" IBV=0 ICLS=0123456789
     IKN=${BAG_NAME[IKD]} IKE=${BAG_E[IKD]} ISELL=$(( ${BAG_PRICE[IKD]:-100} / 4 ))
+    return
+  fi
+  if [[ $IK == C ]]; then                                            # collectables (v5.0): nothing to wear, all to show
+    IT=1 IRR=${CL_RR[IKD]:-0} IVAL=0 IBT="" IBV=0 ICLS=0123456789
+    IKN=${CL_NAME[IKD]} IKE=${CL_E[IKD]} ISELL=${CL_VAL[IKD]:-50}
     return
   fi
   if [[ $IK == U ]]; then                                            # uniques (v2.0): fixed name, legendary+ stats
@@ -459,7 +467,7 @@ item_name() {  # code cls -> INAME (plain) ICOL
   item_stats "$1"
   INAME="${TIER_Q[IT]} $IKN" INSHORT="${TIER_Q[IT]} $IKN"
   (( IRR > 0 )) && INAME="${RAR_NAME[IRR]} $INAME"
-  [[ $IK == B || -n $IUQ ]] && INAME=$IKN INSHORT=$IKN
+  [[ $IK == [BC] || -n $IUQ ]] && INAME=$IKN INSHORT=$IKN
   ICOL=${RAR_COL[IRR]}
 }
 

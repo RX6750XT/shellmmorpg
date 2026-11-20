@@ -845,7 +845,7 @@ srv_line() {
   case $typ in
     HELLO) srv_hello "$from" "$a" ;;
     POS)   # name cls lvl map x y hp maxhp dead sym col
-      isnum "$c" && isnum "$e" && isnum "$f" && [[ $d =~ ^(W|D[0-9]+)$ ]] || return
+      isnum "$c" && isnum "$e" && isnum "$f" && [[ $d =~ ^(W|D[0-9]+|H[0-9]{1,8})$ ]] || return   # v5.0: H = a room at the inn
       (( c <= 99 && e <= 999 && f <= 999 )) || return
       [[ -n ${SP_NAME[$from]} ]] || srv_hello "$from" "$a"
       SP_LVL[$from]=$c SP_MAP[$from]=$d SP_X[$from]=$e SP_Y[$from]=$f SP_SEEN[$from]=$NOW

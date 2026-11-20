@@ -58,6 +58,9 @@ here-document and the start code:
 | `05c_bank.sh` | bags, bank vault, shared chest |
 | `04h_v45.sh` | v4.5 client (loaded after the UI): paragon, valor, mounts, mythic keys, dailies and weeklies, achievements and titles, save/load hooks (`v45_save`, `v45_load_kv`) |
 | `05e_v45ui.sh` | v4.5 screens: paragon page, mythic gate, stable, valor quartermaster, achievements, dailies tab |
+| `01f_v50data.sh` | v5.0 data (loaded after `01e`): the 80 collectables (`cl` lines: set, rarity, sprite, glyph, source, name, story) and their lookups (`COL_BOSS`, `COL_CUR`, `COL_SETL`), the room sizes (`ROOM_*`) and their layouts, furniture, 13 achievements |
+| `04i_v50.sh` | v5.0 client (loaded last): save/load hooks (`v50_*`), collectables (`col_give`, `col_kill`, `col_find`, `col_story`, `col_count`), the room map (`room_build`, `room_go`, `room_overlay`, `room_use`), rent (`room_rent`, `room_pay`), displays, the guestbook, visits (`room_msg`) |
+| `05f_v50ui.sh` | v5.0 screens: rooms at the inn, visiting, a display, the collection book, the guestbook |
 | `05d_v3ui.sh` | v3.0 screens: talents, jeweler, quartermaster, questline choices, the tabbed quest log, panel lines for effects and targets |
 | `06_main.sh` | picks the main loop for the mode |
 
@@ -86,7 +89,8 @@ their 6-hex-digit id.
 **Items** are codes: gear `S.kind.tier.rarity` (`W.6.5.2` = epic tier-5
 bow), bags `B.k`, uniques `U.n`; a trailing `!` means locked. `valid_item`
 checks, `item_stats` decodes into `IK IKD IT IRR IVAL IBT IBV ICLS ...`,
-`item_name` adds `INAME`. **Quests** are codes too:
+`item_name` adds `INAME`. Since v5.0 collectables are `C.n` (they decode
+with `IK=C`, `IKD` = the index into the `CL_*` tables). **Quests** are codes too:
 `type.target.need.have.xp.gold` (`K.5.10.3.100.50` = kill 10 of monster 5,
 3 done).
 
@@ -96,6 +100,17 @@ progress of each active step, `QLC` the choices (`-`, `a`, `b`), `REP` six
 numbers. Server-side, `MCH[mid]` is a champion's affix and `M_EL M_WK M_RS
 M_AB M_RNG M_HEALR M_SUMM` describe every monster type (filled by
 `classify_monsters` from the names - override there).
+
+**v5.0 state**: `ROOM_T` (0 = no room, 1-4), `ROOM_PAID` (the week rent is
+paid for), `ROOM_DOOR` (0 locked, 1 party, 2 everybody), `ROOMD` (one code
+or `-` per display), `ROOMC`/`ROOMM` (the room chest), `CLOG` (one
+character per collectable: ever found), `REST_UNTIL`/`REST_PCT` (Well
+Rested, epoch ms), `GUESTS` (`name:day` pairs). A room is a map like a
+dungeon: `room_build H<n> tier` writes its rows from `ROOM_LAY` (walls `#`,
+floor `_`, the door `<`, `+` where furniture stands - not walkable, drawn as
+floor); the furniture itself (`RM_F`, `RM_AT["x,y"]`) is drawn on top like
+sprites by `room_overlay`. Everybody in the same room sends `POS` with the
+same map name, so they see each other as in any dungeon.
 
 **Characters** are saved as `key=value` lines in
 `$SHELLMMO_DIR/<name>.char` (written to a temp file, then renamed). Loading

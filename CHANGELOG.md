@@ -1,5 +1,68 @@
 # Changelog
 
+## 5.0 - the housing update: a room of your own, and 80 collectables
+
+**A room at the inn**
+- Every innkeeper rents rooms upstairs (`[9]` when you talk to them) - and
+  the whole Innkeepers' Guild keeps the same room for you, in every town.
+- Four sizes: the **Attic Room** (level 5, 300 gold), the **Guest Room**
+  (15, 2500), the **Grand Suite** (25, 12000) and the **Hero's Hall** (35,
+  50000). Moving up pays the difference, and everything moves along.
+- **Rent**: 60 to 4000 gold a week, paid when you go up - from your purse,
+  or from the vault if the purse is empty. Can't pay? The door stays shut,
+  but nothing is lost.
+- Your room is a little map you walk around in. Walk into the furniture:
+  - the **bed** wakes you up **Well Rested**: +10% to +25% experience from
+    fights for 30 minutes (+1% more for every four things on display, up to
+    +10%),
+  - the **room chest** stores 20 to 70 items and all your materials,
+  - **displays** (4, 8, 14 or 20) show off whatever you put on them: gear,
+    uniques, bags - and collectables,
+  - the **bookshelf** opens your collection book, the **guestbook** shows
+    who came to visit; fireplaces, plants, chairs, lanterns and banners
+    are just nice.
+- Rooms are safe and rest you as fast as a town.
+
+**Collectables** (a new kind of item: `C.<n>`)
+- **80 of them in six sets**: a trophy from the boss of every dungeon (19)
+  and from every world boss (16), a curio for every land (22, rarely found
+  on its creatures - more often on champions and rares), Angler's
+  Treasures from fishing (8), Prospector's Finds from mining and herbalism
+  (8), and a relic at every sixth chapter of the story (7 - heroes who are
+  further along get theirs at once).
+- Something new is a bit more likely than a copy; treasure chests hide odd
+  things too. A collectable is never auto-sold: with full bags it goes to
+  your room chest, or squeezes in like a unique.
+- The **collection book** (`H`, or the bookshelf) shows every set, what you
+  found, where you keep it - and where to look for the rest.
+- They can't be worn. Shops buy the ones you have twice (`[c]` at general
+  stores, traders and spice stalls); "sell everything" and "sell junk" keep
+  them. Lock one (`[l]`) and it is always kept.
+- **13 new achievements** (45 in all) - Homeowner, Grand Host, Collector,
+  Curator, Master Collector, one for every complete set, Exhibitor, Good
+  Company - with new titles: the Host, the Curator, the Collector, the
+  Trophy Hunter, the Titanslayer, the Curious, the Lucky, the Rockhound,
+  Keeper of Tales, the Hospitable.
+
+**Visits**
+- `[9]` then `[v]` at any inn: whose door is open to you? Knock, and the
+  innkeeper takes you up. The owner must be online - their client lets you
+  in and shows you their room as it is right now (changes appear live).
+- Your **door**: locked, party only (the default) or open to everybody.
+- Guests look at the displays, read your collection count and sign your
+  guestbook (once per visit, the last twelve visitors are kept).
+
+**Also**
+- Help page 4 explains the home; the inventory has a card for collectables,
+  the bank screen a tab for the room chest.
+
+**Protocol** (play the same version): `POS` may carry a room map
+`H<owner-id in decimal>`; new player-to-player messages `RASK RHAS RREQ
+ROOM RNO RSIGN`; item code `C.<n>`. Old saves load unchanged.
+
+New test file `tests/test_v50.sh` (182 checks); the render test draws every
+room size, a visit, and every new screen.
+
 ## 4.5 - the endgame, and the gaps of 4.0 closed
 
 **Gaps closed**

@@ -691,7 +691,7 @@ ui_help() {  # two pages: [<] [>] turn
   ui "  Void Rift. Level 30-40: Duskwood, Sunken Kingdom, Stormreach, Gloomcap,"
   ui "  Dragonspine, Bonefields, Starfall Crater. Waystones (&) link 17 towns."
   ui "  NPCs: yellow ! quests, ❕/orange ! a questline, ? a letter, star"
-  ui "  the story (talk to Old Tom first). 18 dungeons (>), level 3 to 39."
+  ui "  the story (talk to Old Tom first). 23 dungeons (>), level 2 to 40."
   ui "  Night: only torches light the way. Weather: sandstorms blind,"
   ui "  blizzards slow, ash burns (tonics!). Murder makes you WANTED."
   ui "  Bankers (B): your vault + a chest shared by all your heroes."
@@ -759,6 +759,7 @@ wm_open() {  # [keep] -> fit zoom, center on me
 }
 
 wm_build() {  # rows sampled at the current zoom, cached
+  (( WM_Z >= 1 )) || { WM_Z=1; wm_open keep; }                 # (zoom 0 would sample forever)
   [[ $WM_CZ == "$WM_Z:$TW" ]] && return
   local z=$WM_Z y x row line
   WMR=()

@@ -342,7 +342,7 @@ classify4() {
     [[ $n =~ Shaman|Priest ]] && M_HEALR[t]=1
   done
 }
-classify_monsters; classify4
+# (the classifier runs once, after all creatures: 01g)
 S_EL+=(3 3 5  0 0 5)                               # Thorn Whip .. Inner Peace
 
 # --- scouting spots, collection items -----------------------------------------------------------------------------

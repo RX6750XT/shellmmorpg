@@ -158,6 +158,7 @@ sock_cost() {  # code -> SKC gold for the next socket (0 = not possible)
 # === elements, damage and status effects ==========================================================
 mname() {  # mid -> MN: "Vampiric Wolf" for champions
   local t=${CM_T[$1]}
+  [[ -n $t ]] || { MN="Something"; return; }                     # (a monster this client does not know about yet)
   MN=${N_FULL[$t]:-${M_NAME[t]}}
   (( ${CM_CH[$1]:-0} )) && MN="${CHP_NAME[CM_CH[$1]-1]} $MN"
 }
@@ -252,7 +253,7 @@ fac_at() {  # x y -> FA (faction of that place)
     "Sapphire Isles"|"Emerald Jungle") FA=4 ;; *) FA=5 ;;
   esac
 }
-fac_of_npc() { local h=${N_HOME[$1]:-${MW_NAME[$1]}}; FA=${TOWN_FAC[$h]:--1}; }   # npc type -> FA
+fac_of_npc() { [[ -n $1 ]] || { FA=-1; return; }; local h=${N_HOME[$1]:-${MW_NAME[$1]}}; FA=${TOWN_FAC[$h]:--1}; }   # npc type -> FA
 rep_disc() {  # npc type -> DISC (% off in its shop)
   DISC=0; fac_of_npc "$1"; (( FA >= 0 )) || return
   rep_rank "$FA"; DISC=$(( RR * 5 ))

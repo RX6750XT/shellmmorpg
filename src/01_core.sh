@@ -11,16 +11,18 @@
 #  ./shellmmorpg.sh --help              this help
 #
 #  A 480x200 open world with 17 towns and 22 regions, 10 classes and 30
-#  skills, 18 procedurally generated dungeons with elites, chests and bosses,
+#  skills, 23 procedurally generated dungeons with elites, chests and bosses,
 #  roaming world bosses, day & night, weather, parties and party quests,
-#  professions and crafting, trading, bags and banks, 42 unique legendaries,
+#  professions and crafting, trading, bags and banks, 66 unique legendaries,
 #  12 allies and a 42-chapter story in two acts - for up to level 40. Talent
-#  trees, elements and status effects, champions and 24 rare elites, gems and
-#  sockets, 19 questlines with choices and eight factions. Since 4.5: mythic
+#  trees, elements and status effects, champions and 46 rare elites, gems and
+#  sockets, 27 questlines with choices and eight factions. Since 4.5: mythic
 #  dungeons, a raid, invasions, valor, mounts, paragon levels, dailies,
 #  achievements and titles - and professions and gems up to level 40.
 #  Since 5.0: a room of your own at every inn - rent it, sleep in it, store
 #  things in it, show off 80 collectables on its displays, invite friends.
+#  Since 6.0: more of everything - 44 creatures, 22 rares, 4 dungeons, 4 world
+#  bosses, 8 questlines, 20 uniques, 6 materials, 54 more collectables.
 #
 #  Hosting needs python3, socat or ncat (force one: SHELLMMO_HUB=socat).
 #  Joining needs nothing but bash. Characters are saved in ~/.shellmmorpg/
@@ -30,7 +32,7 @@
 #  This file is built from src/*.sh and world.txt by build.sh - edit those.
 # ============================================================================
 
-VERSION="5.0"
+VERSION="6.0"
 DATA_DIR="${SHELLMMO_DIR:-$HOME/.shellmmorpg}"
 SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
 # string lengths must count characters, not bytes (emoji graphics): make sure we run in a UTF-8 locale
@@ -349,7 +351,8 @@ isqrt() {
 
 clean_text() { local t=${1//[[:cntrl:]]/}; t=${t//'|'/'/'}; CLEAN=${t:0:200}; }
 
-isnum() { [[ $1 =~ ^(0|[1-9][0-9]{0,8})$ ]]; }   # no leading zeros: '08' would crash bash arithmetic
+isnum() { [[ ${#1} -le 9 && $1 == @(0|[1-9]*([0-9])) ]]; }   # no leading zeros: '08' would crash bash arithmetic
+# (a glob, not a regex: bash compiles a regex on every call - this runs for every number of every network line, 9x faster)
 
 cheb() { local a=$(( $1 < 0 ? -$1 : $1 )) b=$(( $2 < 0 ? -$2 : $2 )); D=$(( a > b ? a : b )); }
 
@@ -402,7 +405,7 @@ slot_kinds() {  # slot -> KCLS (classes per kind) KCNT
 
 valid_item() {  # code -> 0 if it is well-formed gear (or a bag, a unique, a collectable)
   [[ $1 =~ ^B\.[0-5]$ ]] && return 0
-  [[ $1 =~ ^C\.(0|[1-9][0-9]?)$ ]] && { (( BASH_REMATCH[1] < NCOL )); return; }    # v5.0: collectables
+  [[ $1 =~ ^C\.(0|[1-9][0-9]{0,2})$ ]] && { (( BASH_REMATCH[1] < NCOL )); return; }    # v5.0: collectables
   [[ $1 =~ ^U\.(0|[1-9][0-9]?)$ ]] && { (( BASH_REMATCH[1] < NUQ )); return; }
   [[ $1 =~ ^([WAOHJ])\.(0|[1-9][0-9]?)\.([1-9]|1[0-2])\.([0-3])(\.(__|[rseato][1-4]){1,3})?$ ]] || return 1   # v3.0: sockets, v4.0: tiers 10-12, v4.5: perfect gems
   local k=${BASH_REMATCH[2]}

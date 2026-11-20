@@ -101,25 +101,28 @@ cl 5 3 🏅 'W' 24 "The Crownbearer's Medal"   "Given by the five towns to the o
 cl 5 3 💌 'h' 30 "Sealed Dawnguard Letter"   "Never opened. Some letters are better kept."
 cl 5 3 🚩 'B' 36 "Banner of the Dawn"        "Carried through the Bonefields and back again."
 cl 5 3 🪐 'Z' 42 "Orrery of the Fallen Star" "The whole sky in brass - with one star missing."
-unset -f cl
-NCOL=${#CL_NAME[@]}
-CL_VAL=() CL_SRC=() COL_SETL=() COL_W=(50 30 15 5)    # sell value, where it comes from, the members of every set, pick weights
+COL_W=(50 30 15 5)                                    # pick weights per rarity
+col_index() {  # (re)build what the cl lines imply: NCOL, sell values, sources, set lists, who drops what (v6.0 appends more)
+  local i r t n
+  NCOL=${#CL_NAME[@]} NCS=${#CS_NAME[@]} CL_VAL=() CL_SRC=() COL_SETL=() COL_BOSS=() COL_CUR=()
+  for (( i = 0; i < NCOL; i++ )); do
+    r=${CL_REF[i]}
+    CL_VAL[i]=$(( ${CL_RR[i]} == 0 ? 80 : (${CL_RR[i]} == 1 ? 300 : (${CL_RR[i]} == 2 ? 1000 : 3500)) ))
+    COL_SETL[CL_SET[i]]+="$i "
+    case ${CL_SET[i]} in
+      0) t=${D_BOSS[r]}; COL_BOSS[$t]=$i; n=${D_NAME[r]}; [[ $n == The\ * ]] || n="the $n"
+         CL_SRC[i]="${M_NAME[t]}, the master of $n" ;;
+      1) t=${WB_LIST[r]}; COL_BOSS[$t]=$i; CL_SRC[i]="${M_NAME[t]}, a world boss" ;;
+      2) COL_CUR[$r]=$i; CL_SRC[i]="the creatures of the $r" ;;
+      3) CL_SRC[i]="fishing, anywhere" ;;
+      4) CL_SRC[i]="mining and herbalism, anywhere" ;;
+      5) CL_SRC[i]="chapter $r of the story" ;;
+      6) COL_BOSS[$r]=$i; CL_SRC[i]="${M_NAME[r]}, a rare elite (level ${M_LVL[r]})" ;;
+    esac
+  done
+}
 declare -A COL_BOSS=() COL_CUR=()                     # monster type -> trophy, region name -> curio
-for (( _i = 0; _i < NCOL; _i++ )); do
-  _r=${CL_REF[_i]}
-  CL_VAL[_i]=$(( ${CL_RR[_i]} == 0 ? 80 : (${CL_RR[_i]} == 1 ? 300 : (${CL_RR[_i]} == 2 ? 1000 : 3500)) ))
-  COL_SETL[CL_SET[_i]]+="$_i "
-  case ${CL_SET[_i]} in
-    0) _t=${D_BOSS[_r]}; COL_BOSS[$_t]=$_i; _n=${D_NAME[_r]}; [[ $_n == The\ * ]] || _n="the $_n"
-       CL_SRC[_i]="${M_NAME[_t]}, the master of $_n" ;;
-    1) _t=${WB_LIST[_r]}; COL_BOSS[$_t]=$_i; CL_SRC[_i]="${M_NAME[_t]}, a world boss" ;;
-    2) COL_CUR[$_r]=$_i; CL_SRC[_i]="the creatures of the $_r" ;;
-    3) CL_SRC[_i]="fishing, anywhere" ;;
-    4) CL_SRC[_i]="mining and herbalism, anywhere" ;;
-    5) CL_SRC[_i]="chapter $_r of the story" ;;
-  esac
-done
-unset _i _r _t _n
+col_index
 
 # --- housing: four rooms, rented at any inn (they all keep the same room for you) -----------------------------
 ROOM_NAME=("" "Attic Room" "Guest Room" "Grand Suite" "Hero's Hall")

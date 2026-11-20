@@ -79,6 +79,7 @@ screens() {
   done
   CLK_OFF=$(( DAYLEN / 2 )); PX=420 PY=60; explore_here; frame "night in Gloomcap"; CLK_OFF=0
   gen_dungeon D17 17 777; enter_instance D17 17 777 2>/dev/null; UI=""; frame "inside the Shattered Star"; leave_instance quiet
+  for d in $D60 $(( D60 + 3 )); do gen_dungeon D3$d "$d" 4242; enter_instance D3$d "$d" 4242 2>/dev/null; UI=""; frame "inside ${D_NAME[d]}"; leave_instance quiet; done   # v6.0
   CLS=8; calc_stats; PX=178 PY=172; UI=""; frame "a druid in Hollowmere"; UI=talents; frame "druid talents"
   CLS=9; calc_stats; UI=talents; frame "monk talents"; CLS=7; calc_stats
   REP=(100 2000 5000 9500 16000 -500 3000 12000); QLOG_TAB=2 UI=qlog; frame "eight factions"

@@ -1,5 +1,100 @@
 # Changelog
 
+## 6.0 - more of everything, and the big bug hunt
+
+**More creatures**
+- **44 new creatures**, two for every land - from the Thornhog and the
+  Meadow Beetle at level 1 to the Starlit Wisp and the Crater Behemoth at
+  40. Every one has its element, weakness, resistance and trick (poison,
+  bleeding, burning, chill, stuns, curses, ranged casters), its sprite and
+  its collect-quest item. The quest boards hand out work for them.
+- **22 new rare elites**, one for every land (46 in all): Big Bertha, the
+  Sultan of Sand, Whitefang the Elder, Shadowmaw, the Pumpkin King, Lady
+  Brine, the Devourer's Eye...
+- **4 new world bosses** for the levels that had none (20 in all): Old
+  Grumblegut (4), Gorehorn the Mammoth (17), Vesper the Jade Panther (23)
+  and Ruin, the Star Devourer (40).
+
+**Four new dungeons** (23 in all), for the gaps on the way up
+- **Cellar of the Old Mill** (level 2, Silverlake) - Rattigan the Rat King
+- **Red Hand Hideout** (level 8, Stormcrag Foothills) - Rourke Red-Hand
+- **Hrimgard's Tomb** (level 16, Frostfang Tundra) - Queen Hrimgard
+- **The Cinderdeep Mine** (level 26, Scorched Badlands) - Foreman Gorrak
+  the Molten
+- Each with its own elite, walls, size and chests, two uniques on its boss
+  and a trophy for your room.
+
+**Eight new townsfolk, eight new questlines** (27 in all)
+- Farmer Hesk (Hearthmoor) *The Mill Rats*, Warden Brannoc (Ironwood Camp)
+  *The Red Hand*, Sheikha Amira (Oasis of Kadar) *Winds of the Djinn*,
+  Skald Ragna (Frosthold) *The Frost Queen's Saga*, Admiral Vane (Port
+  Coral) *Siren Song*, Gemcutter Pell (Shardhaven) *Fractured Light*,
+  Elder Moku (Jadeleaf Village) *The Jade Fever*, Prospector Dusty
+  (Redrock Outpost) *Cinderdeep*.
+- Five steps each - slay, scout, collect, deliver, talk, clear a dungeon,
+  hunt a rare - and a choice at the end: a unique of the line, or standing
+  and gold. Eight new scouting spots. Every one of them also has kill
+  quests and courier letters for you, like the other quest givers.
+
+**Items**
+- **20 new uniques** (66 in all): from the new dungeon bosses, the new
+  world bosses and the questlines - Rattigan's Crown, the Red Hand Cutlass,
+  Hrimgard's Frostcrown, the Cinderdeep Lantern, the Eye of Ruin...
+- **2 new weapon kinds**: the Hand Cannon (rogues, rangers) and the
+  Runestone (mages, necromancers, druids).
+
+**Materials** (60 in all)
+- Levels 20-29 had nothing to gather. Now: **Cobalt Ore** (22) and
+  **Adamantite Ore** (26) in the highlands, badlands and the Void Rift,
+  **Sungrass** (22) and **Nightshade** (26) in the jungle, isles and rift,
+  **Reef Snapper** (sea, 20) and **Glacier Char** (ice and lava, 24).
+- The forge makes tier 8 and 9 gear from cobalt and adamantite - no more
+  waiting for titanite at 30. Alchemists brew greater potions and Elixirs
+  of Swiftness from the new herbs.
+
+**Collectables** (134 in all, seven sets)
+- Trophies of the new dungeon bosses and world bosses.
+- A new set, **Hunter's Trophies**: one for every rare elite (46). Rares
+  leave their trophy behind like bosses do - often the first time.
+- **5 new achievements** (50 in all): Big Game Hunter, Huntmaster, Hoarder,
+  Pathfinder, Dungeon Lord - with titles.
+
+**The bug hunt** - a monkey that presses thousands of random keys in every
+screen and a fuzzer that floods the world server with nearly-right lines
+(both are part of the test suite now) found:
+- **Talking to Hilda the Stablemaster, Hale or Seren quit the game.** They
+  had nothing to say, and picking a line out of nothing divided by zero -
+  which in bash ends the main loop. They talk now, and an empty choice can
+  never crash anything again.
+- A level `08` (with a leading zero) is octal to bash and breaks its
+  arithmetic: a mythic key level in a dungeon request (server), the ally
+  in another player's position, the mythic fields of a dungeon start, and
+  paragon points and dailies in a save file. All of them are checked
+  properly now.
+- A skill effect with an empty name from another player, an attack from a
+  monster this client did not know yet, a shop or quartermaster screen
+  without its NPC: each printed a bash error onto the screen.
+- The world map could freeze the game if it was drawn before its zoom was
+  set (after a resize at the wrong moment).
+- Ore and herbs of 4.5 claimed to be for cooking in the inventory; every
+  material now says what the forge or the alchemist makes of it.
+- Collectables past number 99 would have been thrown away on loading.
+
+**Faster**
+- Lines about monsters on other maps (most of what the server says) are
+  dropped before they are parsed: **4.5x faster**.
+- Every number of every network line is checked with a glob instead of a
+  regular expression (bash compiles a regex on every call): 9x faster
+  checks, a quarter to a third less time per line for the client and the server.
+- The creature classifier ran three times while the game loaded; it runs
+  once now.
+
+**Protocol**: unchanged, but play the same version (new creatures, items
+and dungeon numbers). Old saves load unchanged.
+
+New test files `tests/test_v60.sh` (72 checks), `tests/test_monkey.sh` and
+`tests/test_fuzz.sh` (`bash tests/test_monkey.sh 5000 42` for a longer run).
+
 ## 5.0 - the housing update: a room of your own, and 80 collectables
 
 **A room at the inn**

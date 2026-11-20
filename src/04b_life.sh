@@ -358,7 +358,7 @@ craft_build() {  # CRAFT (forge|alch|cook) -> RC_ID RC_LAB RC_NEED RC_GOLD
         item_name "A.$FAK.$t.0" "$CLS"; item_icon "A.$FAK.$t.0" "$CLS"; rc "A.$FAK.$t" "${II:0:2}${II:+ }$INAME" "$o:6" $(( 15 * t * t ))
       done
       local fr                                              # v4.5: titanite and starmetal, tiers 8-12
-      for fr in "8:$M45:4 5:4" "9:$M45:6" "10:$M45:8 5:6" "11:$(( M45 + 1 )):6 $M45:4" "12:$(( M45 + 1 )):10 $M45:6"; do
+      for fr in "${FORGE_X[@]}" "8:$M45:4 5:4" "9:$M45:6" "10:$M45:8 5:6" "11:$(( M45 + 1 )):6 $M45:4" "12:$(( M45 + 1 )):10 $M45:6"; do
         t=${fr%%:*}
         item_name "W.$FWK.$t.0" "$CLS"; item_icon "W.$FWK.$t.0" "$CLS"; rc "W.$FWK.$t" "${II:0:2}${II:+ }$INAME" "${fr#*:}" $(( 15 * t * t ))
         item_name "A.$FAK.$t.0" "$CLS"; item_icon "A.$FAK.$t.0" "$CLS"; rc "A.$FAK.$t" "${II:0:2}${II:+ }$INAME" "${fr#*:}" $(( 15 * t * t ))
@@ -374,7 +374,9 @@ craft_build() {  # CRAFT (forge|alch|cook) -> RC_ID RC_LAB RC_NEED RC_GOLD
       rc tfire "${I_tfire}Fire Ward Tonic (ash immunity)" "11:2"
       rc tveil "${I_tveil}Sand Veil (see far in storms/night)" "9:2 7:1"
       rc gh3 "${I_gh}3x Greater health potion" "$(( M45 + 2 )):2"; rc gm3 "${I_gm}3x Greater mana potion" "$(( M45 + 2 )):1 $(( M45 + 3 )):1"
-      rc grand "${I_str}Grand Elixir (Strength + Iron Skin + Swiftness)" "$(( M45 + 3 )):3 $(( M45 + 2 )):1" ;;
+      rc grand "${I_str}Grand Elixir (Strength + Iron Skin + Swiftness)" "$(( M45 + 3 )):3 $(( M45 + 2 )):1"
+      local x xi xl xn                                      # v6.0: cobalt-era herbs
+      for x in "${ALCH_X[@]}"; do IFS=: read -r xi xl xn <<< "$x"; ci "$xi"; rc "$xi" "$CI$xl" "$xn"; done ;;
     cook)
       for f in ${MAT_GRP[0]}; do                            # (only fish - v4.5 fix: gems were "cookable")
         if (( MAT_RARE[f] == 2 )); then ci meal2; rc "c$f" "${MAT_NAME[f]} -> $CI${CI:+ }Fisherman's Feast" "$f:1"

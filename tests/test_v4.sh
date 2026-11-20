@@ -18,7 +18,7 @@ for (( i = 0; i < ${#T4_NAME[@]}; i++ )); do
 done
 region_of 200 190; eq "south of Redrock lies the Duskwood" "$RNAME" "Duskwood"
 fac_at 420 180; eq "the crater belongs to the Dawnguard" "$FA" 7
-for (( d = 11; d < NDT; d++ )); do
+for (( d = 11; d < 18; d++ )); do                 # (the v4.0 dungeons: 6.0 adds some for lower levels)
   tile W "${D_ENTX[d]}" "${D_ENTY[d]}"; eq "${D_NAME[d]} has an entrance" "$T" ">"
   ge "${D_NAME[d]} is for level 30+" "${D_REQ[d]}" 30
 done

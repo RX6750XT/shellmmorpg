@@ -72,7 +72,7 @@ col_where() {  # index -> CW_AT: where you keep it now ("" = nowhere)
 col_scan() {  # everything you hold counts as found (trades, gifts, the vault)
   local x
   for x in "${INV[@]}" "${ROOMD[@]}" "${ROOMC[@]}" "${BANK[@]}"; do
-    [[ $x == C.* ]] && { x=${x%!}; x=${x#C.}; [[ $x =~ ^[0-9]+$ ]] && (( x < NCOL )) && col_mark "$x"; }
+    [[ $x == C.* ]] && { x=${x%!}; x=${x#C.}; [[ $x =~ ^(0|[1-9][0-9]{0,2})$ ]] && (( x < NCOL )) && col_mark "$x"; }
   done
 }
 col_pick() {  # set -> CP: a random member, rare ones are rarer; something new is a bit more likely
@@ -418,7 +418,7 @@ ach_ok50() {
     5|6|7|8|9|10) s=$(( j - 5 )); col_count; (( CLSD[s] >= CLST[s] )) ;;
     11) room_shown; (( RSH >= 20 )) ;;
     12) set -- $GUESTS; (( $# >= 5 )) ;;
-    *) return 1 ;;
+    *) ach_ok60 "$1" ;;                                        # v6.0
   esac
 }
 

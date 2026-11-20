@@ -15,7 +15,7 @@ v45_reset() {  # a new hero
 }
 v45_fix() {
   local i
-  [[ $PARA_P =~ ^[0-9]{1,2}( [0-9]{1,2}){5}$ ]] || PARA_P="0 0 0 0 0 0"
+  [[ $PARA_P =~ ^(0|[1-9][0-9]?)( (0|[1-9][0-9]?)){5}$ ]] || PARA_P="0 0 0 0 0 0"     # (no "08": octal)
   while (( ${#MOUNTS} < NMNT )); do MOUNTS+="0"; done; MOUNTS=${MOUNTS:0:NMNT}
   [[ -z $ACHS ]] && ACH_QUIET=1                                # (an old hero: no fanfare for what is already done)
   while (( ${#ACHS} < NACH )); do ACHS+="0"; done; ACHS=${ACHS:0:NACH}
@@ -28,9 +28,9 @@ v45_fix() {
 }
 v45_load_kv() {  # key value: the lines load_char does not know
   case $1 in
-    PARA_P) [[ $2 =~ ^[0-9]{1,2}( [0-9]{1,2}){5}$ ]] && PARA_P=$2 ;;
+    PARA_P) [[ $2 =~ ^(0|[1-9][0-9]?)( (0|[1-9][0-9]?)){5}$ ]] && PARA_P=$2 ;;
     MOUNTS|ACHS) [[ $2 =~ ^[01]{1,64}$ ]] && printf -v "$1" '%s' "$2" ;;
-    DAILY|WEEKLY) [[ $2 =~ ^[0-9]{1,7}(\ [0-9]{1,2}:[0-9]{1,6}:[01]){1,3}$ ]] && printf -v "$1" '%s' "$2" ;;
+    DAILY|WEEKLY) [[ $2 =~ ^(0|[1-9][0-9]{0,6})(\ (0|[1-9][0-9]?):(0|[1-9][0-9]{0,5}):[01]){1,3}$ ]] && printf -v "$1" '%s' "$2" ;;
     PARA|KEYLV|MYBEST|VALOR|MNT_CUR|DCLR|RAIDK|RAREK|INVK|DLYK|MYDONE|GEMP) [[ $2 =~ ^[0-9]{1,9}$ ]] && printf -v "$1" '%d' "$(( 10#$2 ))" ;;
     TITLE) [[ $2 =~ ^-?[0-9]{1,3}$ ]] && TITLE=$2 ;;
     *) v50_load_kv "$1" "$2" ;;                                 # v5.0: housing and collectables

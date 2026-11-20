@@ -33,16 +33,19 @@ for the network hub (joining needs nothing but bash). Characters live in
 
 ## What's in it
 
+- **6.0: more of everything** - 44 more creatures, a rare elite for every
+  land, 4 more dungeons and world bosses, 8 more questlines, 20 more uniques,
+  materials for levels 20-29
 - **10 classes** (Warrior, Mage, Ranger, Cleric, Rogue, Paladin, Necromancer,
   Bard, Druid, Monk), 3 skills each, gear that only some classes can use, and **talent
   trees** - three per class, with capstones that change how you fight
 - **Elements and status effects**: every creature has a weakness and a
   resistance; monsters poison, bleed, burn, chill, stun and weaken
 - **A 480×200 world**: 22 regions from level 1 to 40, 17 towns with
-  waystones, day and night, weather per region, 16 roaming world bosses
-- **18 dungeons**, generated fresh for every visit, with elites, treasure
-  chests, bosses that summon help, and 42 unique legendaries
-- **266 kinds of creatures**: champions with 10 affixes, 24 rare elites,
+  waystones, day and night, weather per region, 20 roaming world bosses
+- **23 dungeons**, generated fresh for every visit, with elites, treasure
+  chests, bosses that summon help, and 66 unique legendaries
+- **257 kinds of foes**: champions with 10 affixes, 46 rare elites,
   ranged casters and healers
 - **Gems and sockets**: 18 gems, a jeweler at every smith
 - **Endgame**: mythic dungeons (+2 to +20, weekly affixes, a clock), the
@@ -59,8 +62,9 @@ for the network hub (joining needs nothing but bash). Characters live in
 - **A home of your own** (5.0): rent a room at any inn - four sizes, a
   weekly rent - with a bed (Well Rested: more XP), a chest, displays, a
   collection book and a guestbook; friends visit while you are online
-- **80 collectables** in six sets: boss and world boss trophies, a curio for
-  every land, finds from fishing and gathering, relics of the story
+- **134 collectables** in seven sets: boss and world boss trophies, a curio
+  for every land, finds from fishing and gathering, relics of the story,
+  a hunter's trophy for every rare elite
 - **Two looks**: HD emoji graphics (2 columns per tile) or classic ASCII
 
 ## The project

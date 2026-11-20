@@ -116,7 +116,9 @@ n45 92 29 stable "Hilda the Stablemaster"        Hilda H 180 🧑 Hearthmoor
 n45 68 29 valor  "Hale the Valor Quartermaster"  Hale  V 220 💂 Hearthmoor
 n45 $(( 366 + 13 )) $(( 154 + 10 )) valor "Seren the Valor Quartermaster" Seren V 220 💂 Dawnspire
 NM=${#M_NAME[@]}
-classify_monsters; classify4
+# (the classifier runs once, after all creatures: 01g)
+N_SAY+=([stable]="Every hero needs a good horse. Or a camel. Or a gryphon, if you can afford one.|Mind the hooves, love.|They're fed, brushed and ready to run."
+        [valor]="Valor can't be bought with gold - only earned. Then you can spend it here.|Mythic keys, the Eclipse Throne, invasions: that is where valor comes from.|Godforged steel, for those who earned it.")
 
 # --- valor: earned in mythic dungeons, the raid, invasions, dailies and weeklies --------------------------------------
 VW_NAME=("Perfect gem (random)" "Godforged weapon, epic, 2 sockets" "Godforged armor, epic, 2 sockets"

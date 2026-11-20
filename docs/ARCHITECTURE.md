@@ -60,6 +60,8 @@ here-document and the start code:
 | `05e_v45ui.sh` | v4.5 screens: paragon page, mythic gate, stable, valor quartermaster, achievements, dailies tab |
 | `01f_v50data.sh` | v5.0 data (loaded after `01e`): the 80 collectables (`cl` lines: set, rarity, sprite, glyph, source, name, story) and their lookups (`COL_BOSS`, `COL_CUR`, `COL_SETL`), the room sizes (`ROOM_*`) and their layouts, furniture, 13 achievements |
 | `04i_v50.sh` | v5.0 client (loaded last): save/load hooks (`v50_*`), collectables (`col_give`, `col_kill`, `col_find`, `col_story`, `col_count`), the room map (`room_build`, `room_go`, `room_overlay`, `room_use`), rent (`room_rent`, `room_pay`), displays, the guestbook, visits (`room_msg`) |
+| `01g_v60data.sh` | v6.0 data (after `01f`): 44 creatures (`m6`: like `m4`, plus element, weakness, resistance, trick, range), four dungeons, four world bosses, 22 rares, materials 54-59 and their nodes and recipes (`FORGE_X`, `ALCH_X`), two weapon kinds, eight townsfolk and their questlines, uniques 46-65, collectables (the hunter's trophies are made from `RARE_T`); runs the creature classifier - once, for everybody |
+| `04j_v60.sh` | v6.0 client (loaded last): icons of the new materials, sprites of the hunter's trophies, achievements of 6.0, `mat_uses` from the recipes |
 | `05f_v50ui.sh` | v5.0 screens: rooms at the inn, visiting, a display, the collection book, the guestbook |
 | `05d_v3ui.sh` | v3.0 screens: talents, jeweler, quartermaster, questline choices, the tabbed quest log, panel lines for effects and targets |
 | `06_main.sh` | picks the main loop for the mode |

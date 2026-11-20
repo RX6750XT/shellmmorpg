@@ -566,7 +566,7 @@ party_txt() {  # NEAR (party members in reach) -> PTXT " and 2 allies"
 # --- combat -------------------------------------------------------------------
 add_fx() {  # kind "x,y x,y ..." [broadcast]
   local c
-  [[ -n ${FXG[$1]} ]] || return
+  [[ -n $1 && -n ${FXG[$1]} ]] || return                       # (an empty kind from the network: no bash error)
   for c in $2; do
     [[ $c =~ ^-?(0|[1-9][0-9]{0,3}),-?(0|[1-9][0-9]{0,3})$ ]] || continue
     FX_X+=("${c%,*}"); FX_Y+=("${c#*,}"); FX_K+=("$1"); FX_E+=($(( NOW + ${FXD[$1]:-280} )))
@@ -1014,9 +1014,10 @@ recall() {
 }
 
 # --- NPCs, shops ------------------------------------------------------------------
-pick_line() {  # "a|b|c" -> LINE
+pick_line() {  # "a|b|c" -> LINE   (nothing to say: "" - a modulo by zero here once ended the whole game)
   local IFS='|' arr
-  arr=($1); LINE=${arr[RANDOM % ${#arr[@]}]}
+  arr=($1); LINE=""
+  (( ${#arr[@]} )) && LINE=${arr[RANDOM % ${#arr[@]}]}
 }
 
 talk_open() {  # mid
@@ -1334,7 +1335,7 @@ op_del() {
   MAP_DIRTY=1
 }
 
-num() { isnum "$1"; }
+num() { [[ ${#1} -le 9 && $1 == @(0|[1-9]*([0-9])) ]]; }           # = isnum, without a second call
 
 valid_quest() {  # format + range check (K: monster type, D: dungeon, T: known NPC; C B E G: v3.0)
   [[ $1 =~ ^([KDTCBEG])\.(0|[1-9][0-9]{0,8})(\.(0|[1-9][0-9]{0,8})){4}$ ]] || return 1
@@ -1439,8 +1440,8 @@ cli_srv() {  # typ fields...
       [[ ",$e," == *",$MY_ID,"* ]] || return
       enter_instance "$a" "$b" "$c"
       IN_MK=0 IN_LIM=0 IN_T0=$NOW                               # v4.5: mythic level, time limit (ms), time already used
-      if [[ $f =~ ^[0-9]{1,2}$ && $g =~ ^[0-9]{1,7}$ ]] && (( f <= MYTH_MAX )); then
-        IN_MK=$f IN_LIM=$g; [[ $h =~ ^[0-9]{1,7}$ ]] && IN_T0=$(( NOW - h ))
+      if [[ $f =~ ^(0|[1-9][0-9]?)$ && $g =~ ^(0|[1-9][0-9]{0,6})$ ]] && (( f <= MYTH_MAX )); then   # (no leading zeros: octal)
+        IN_MK=$f IN_LIM=$g; [[ $h =~ ^(0|[1-9][0-9]{0,6})$ ]] && IN_T0=$(( NOW - h ))
         (( IN_MK )) && { myth_txt "$IN_MK"; logm "MYTHIC $MYT - the clock is running: $(( IN_LIM / 60000 )) minutes!" "$K_ANN"; }
       fi ;;
     DCLEAR)
@@ -1486,6 +1487,9 @@ cli_srv() {  # typ fields...
 cli_line() {
   local line=$1 tag typ from a b c d e f g h i j k l q r nm
   (( ${#line} <= 2048 )) || return
+  if [[ $line == SM1\|@(MON|MMOV|MHP|MDIE|MATK)\|srv\|* ]]; then   # most of what the server says is about other maps:
+    r=${line#SM1|*|srv|}; [[ ${r%%|*} == "$CUR_MAP" ]] || return     # drop it before parsing (v6.0: ~10x faster)
+  fi
   IFS='|' read -r tag typ from a b c d e f g h i j k l q r <<< "$line"
   [[ $tag == SM1 && $from != "$MY_ID" ]] || return
   if [[ $from == srv ]]; then cli_srv "$typ" "$a" "$b" "$c" "$d" "$e" "$f" "$g" "$h"; return; fi
@@ -1501,7 +1505,7 @@ cli_line() {
       if isnum "$k" && (( k < ${#P_COLC[@]} )); then :; else name_color "$nm"; k=$NCI; fi
       OP_NAME[$from]=$nm OP_CLS[$from]=$b OP_LVL[$from]=$c OP_MAP[$from]=$d OP_X[$from]=$e OP_Y[$from]=$f
       OP_HP[$from]=$g OP_MAX[$from]=$h OP_DEAD[$from]=${i:0:1} OP_SEEN[$from]=$NOW OP_SYM[$from]=$j OP_COL[$from]=$k
-      if [[ $l =~ ^[0-9]{1,2}$ ]] && (( l < NALY )) && num "$q" && num "${r%%|*}"; then OP_ALY[$from]=$l OP_AX[$from]=$q OP_AY[$from]=${r%%|*}
+      if [[ $l =~ ^(0|[1-9][0-9]?)$ ]] && (( l < NALY )) && num "$q" && num "${r%%|*}"; then OP_ALY[$from]=$l OP_AX[$from]=$q OP_AY[$from]=${r%%|*}
       else unset "OP_ALY[$from]"; fi
       x=""; [[ $r == *"|"* ]] && { x=${r#*|}; x=${x%%|*}; }
       if [[ $x =~ ^[0-9]$ ]] && (( x < NMNT )); then OP_MNT[$from]=$x; else unset "OP_MNT[$from]"; fi

@@ -135,6 +135,26 @@ look (`Z2_*` in `04c_gfx.sh`, a line in `colorize2`, the background in
 `T2C`/`T2V`, the moonlit sketch in `dark_glyphs`, the grey world-map sketch
 in `paint`), and the legend in `build.sh` and `check_world.py`.
 
+## v6.0: more of everything (`src/01g_v60data.sh`)
+
+The easiest place for new content now. Patterns:
+
+- **A creature**: one `m6` line (`m4` plus element, weakness, resistance,
+  ability - `-` for none - and range), then `WORLD_TYPES`, a `ZONES` entry
+  and a `QI_NAME`. The classifier runs at the end of this file, after which
+  the `m6` elements win.
+- **A rare elite**: `add_rares "Name:base:level:x:y"` - it gets a hunter's
+  trophy by itself.
+- **A dungeon**: a boss (`m4 ... 1`) and an elite (`m4 ... 2`), one entry in
+  every `D_*` table, a `>` at `D_ENTX/D_ENTY` in `world.txt`, a `cl 0`
+  trophy line and `U_DROP`s.
+- **A material**: `MAT_NAME MAT_VAL MAT_RARE MAT_PK`, its group in
+  `MAT_GRP`, an icon in `04j_v60.sh`, a node (kind 3) with `NODE_MAT
+  NODE_PK NODE_T` and zones, or a `FISHW` entry; recipes in `FORGE_X`
+  (`"tier:mat:n mat:n"`) or `ALCH_X` (`"id:label:mat:n mat:n"`).
+- **Townsfolk**: `n45 x y role "Full Name" short glyph color emoji home` -
+  check with `tests/test_content.sh` that they stand on the floor.
+
 ## v5.0: housing and collectables (`src/01f_v50data.sh`)
 
 - **A collectable**: one `cl` line - `set rarity emoji glyph ref "Name"

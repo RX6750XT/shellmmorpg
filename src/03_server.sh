@@ -755,7 +755,7 @@ make_instance() {  # dtype pid mythic-level ids...
 srv_dreq() {  # from dtype [mythic level]
   local id=$1 dt=$2 mk=${3:-0} pid ex m ids=() far=0
   [[ $dt =~ ^(0|[1-9][0-9]?)$ ]] && (( dt < NDT )) || return
-  [[ $mk =~ ^[0-9]{1,2}$ ]] && (( mk <= MYTH_MAX )) || mk=0
+  [[ $mk =~ ^(0|[1-9][0-9]?)$ ]] && (( mk <= MYTH_MAX )) || mk=0          # (no "08": octal)
   (( mk && (mk < 2 || ${SP_LVL[$id]:-1} < MAXLVL || dt == RAID_DT) )) && mk=0
   (( NOW - ${DREQ_T[$id]:-0} >= 1500 )) || return          # one request per 1.5 s per player
   DREQ_T[$id]=$NOW

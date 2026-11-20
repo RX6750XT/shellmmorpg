@@ -6,12 +6,12 @@ stub_client
 
 # --- professions up to 40 -----------------------------------------------------------------------------
 new_hero 0 40
-eq "54 materials" "$NMAT" 54
+ge "54 materials or more" "$NMAT" 54
 for k in 0 1 2 3; do n=0; for i in ${MAT_GRP[k]}; do (( MAT_PK[i] == k )) || fail "material $i in group $k"; n=$(( n + 1 )); done; ge "group $k has materials" "$n" 6; done
 n=0; for i in ${MAT_GRP[3]}; do gem_kq "$i" || fail "$i is no gem"; n=$(( n + 1 )); done; eq "24 gems" "$n" 24
 for g in 0 1 2 3 4 5; do for q in 1 2 3 4; do gem_mat "$g" "$q"; gem_kq "$GM"; [[ "$GKI.$GQI" == "$g.$q" ]] || fail "gem $g.$q -> $GM -> $GKI.$GQI"; done; done; ok
 PROF_LV=(29 29 29) PROF_XP=(0 0 0); for i in $(seq 400); do prof_gain 1 500 >/dev/null; done; eq "mining goes to 40" "${PROF_LV[1]}" 40
-for t in "${NODE_T[@]}"; do [[ -n ${NODE_MAT[$t]} && -n ${NODE_PK[$t]} ]] || fail "node $t"; done; eq "16 kinds of nodes" "${#NODE_T[@]}" 16
+for t in "${NODE_T[@]}"; do [[ -n ${NODE_MAT[$t]} && -n ${NODE_PK[$t]} ]] || fail "node $t"; done; ge "16 kinds of nodes or more" "${#NODE_T[@]}" 16
 PROF_LV=(40 40 40); m=0; CM_T=(); cm_set 960 $(( N45 + 1 )) $(( PX + 1 )) "$PY" 3 3
 GATH_MID=""; gather_start 960; GATH_END=0; MATS[M45+1]=0; gather_tick
 gt "a starmetal vein gives starmetal" "${MATS[M45+1]}" 0

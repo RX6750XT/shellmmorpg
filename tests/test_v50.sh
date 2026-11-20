@@ -5,8 +5,8 @@ source "$(dirname "$0")/lib.sh"
 stub_client
 
 # --- the data ---------------------------------------------------------------------------------------------
-eq "80 collectables" "$NCOL" 80
-eq "six sets" "$NCS" 6
+ge "80 collectables or more" "$NCOL" 80
+ge "six sets or more" "$NCS" 6
 for a in CL_NAME CL_E CL_G CL_SET CL_RR CL_REF CL_FL CL_VAL CL_SRC; do declare -n tb=$a; eq "$a has an entry per collectable" "${#tb[@]}" "$NCOL"; unset -n tb; done
 bad=0; for (( i = 0; i < NCOL; i++ )); do
   valid_item "C.$i" || bad=1
@@ -15,12 +15,12 @@ bad=0; for (( i = 0; i < NCOL; i++ )); do
   item_name "C.$i" 0; [[ $INAME == "${CL_NAME[i]}" && -n $ICOL ]] || bad=1
   (( ${#CL_FL[i]} > 10 && ${#CL_NAME[i]} <= 31 )) || { bad=1; echo "  ${CL_NAME[i]}: name too long or no flavor"; }
 done; eq "every collectable is a valid item with a 2-column sprite, a glyph, a name and a story" "$bad" 0
-for c in C.80 C.08 C.-1 C. C.1.2 'C.1!x'; do if valid_item "$c"; then fail "$c is no collectable"; else ok; fi; done
+for c in C.$NCOL C.08 C.-1 C. C.1.2 'C.1!x'; do if valid_item "$c"; then fail "$c is no collectable"; else ok; fi; done
 for (( d = 0; d < NDT; d++ )); do [[ -n ${COL_BOSS[${D_BOSS[d]}]} ]] || fail "no trophy for ${M_NAME[${D_BOSS[d]}]}"; done; ok
 for w in "${WB_LIST[@]}"; do [[ -n ${COL_BOSS[$w]} ]] || fail "no trophy for ${M_NAME[w]}"; done; ok
 for r in "${REGIONS[@]}"; do a=($r); [[ ${a[5]} == safe ]] && continue; [[ -n ${COL_CUR[${a[4]//_/ }]} ]] || fail "no curio for ${a[4]}"; done; ok
 n=0; for (( s = 0; s < NCS; s++ )); do for i in ${COL_SETL[s]}; do (( CL_SET[i] == s )) || fail "set list $s"; n=$(( n + 1 )); done; done; eq "every collectable is in its set list" "$n" "$NCOL"
-eq "45 achievements" "$NACH" 45
+ge "45 achievements or more" "$NACH" 45
 # the rooms: rectangles, one door, the right number of displays, every piece of furniture reachable
 for (( t = 1; t <= NROOM; t++ )); do
   room_build H1 "$t"
@@ -122,7 +122,7 @@ eq "...nothing to display without a room" "${#ROOMD[@]}" 0
 cp "$T_TMP/good.char" "$CHAR_FILE"
 cat >> "$CHAR_FILE" <<'EOF'
 ROOM_T=4
-ROOMD=C.99 $(rm -rf /) W.0.9.3 - U.999
+ROOMD=C.999 $(rm -rf /) W.0.9.3 - U.999
 ROOMC=C.3 a[$(touch /tmp/pwn)] C.500
 CLOG=12x
 GUESTS=a:1 $(boom):2

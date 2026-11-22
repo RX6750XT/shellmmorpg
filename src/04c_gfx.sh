@@ -3,7 +3,8 @@
 #  sprites, colored ground) and the classic 1-column ASCII mode ([v] switches),
 #  text width helpers, and the tile-row cache that makes map frames cheap.
 # ---------------------------------------------------------------------------
-GFX_FILE="$DATA_DIR/config" GFX_NEW=0 TW=1 TW2=0 MW=81 PLX=x
+GFX_FILE="$DATA_DIR/config"; [[ $MODE == session ]] && GFX_FILE="$DATA_DIR/prefs/${MY_NAME,,}.gfx"   # v7.0: per player on the server
+GFX_NEW=0 TW=1 TW2=0 MW=81 PLX=x
 if [[ -z $GFX ]]; then
   [[ -f $GFX_FILE ]] && GFX=$(sed -n 's/^GFX=//p' "$GFX_FILE" 2>/dev/null | head -n1)
   [[ $GFX == @(hd|ascii) ]] || { GFX=hd GFX_NEW=1; }
@@ -328,7 +329,7 @@ toggle_gfx() {
   else logm "Graphics: classic ASCII. [v] switches to HD emoji graphics." "$K_GOOD"; fi
 }
 
-save_gfx() { mkdir -p "$DATA_DIR" 2>/dev/null; printf 'GFX=%s\n' "$GFX" > "$GFX_FILE" 2>/dev/null; }
+save_gfx() { mkdir -p "${GFX_FILE%/*}" 2>/dev/null; printf 'GFX=%s\n' "$GFX" > "$GFX_FILE" 2>/dev/null; }
 
 # --- juice: floating numbers, hit flashes, nicer bars -------------------------------
 ft_add() {  # x y text style

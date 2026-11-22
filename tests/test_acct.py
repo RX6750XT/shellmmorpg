@@ -5,6 +5,7 @@ privacy of hero data (python3 and socat hubs), bad saves, nobody plays without a
 import os, random, shutil, signal, socket, subprocess, sys, tempfile, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import test_net as T
+T.NAME = 'test_acct'
 from test_net import Bot, check
 
 US = '\x1f'
@@ -71,8 +72,7 @@ def run(port):
     check('after the login the world comes in', a.wait(r'^SM1\|CLOCK\|srv\|\d+$') is not None)
     spy.pump(0.5)
     check('hero data and passwords never reach other players',
-          not any(('ALOAD' in l or 'ASAVE' in l or f'|AR{a.id}|' in l or 'sekret1' in l) for l in spy.lines) or T.HUB == 'ncat',
-          '(ncat relays everything by design)')
+          not any(('ALOAD' in l or 'ASAVE' in l or f'|AR{a.id}|' in l or 'sekret1' in l) for l in spy.lines))
 
     # --- a hero with another name than the login is ignored ------------------------------------------------
     b = Bot(port, 'abc123', 'bob')
@@ -145,7 +145,7 @@ def run(port):
 def main():
     port = random.randint(20000, 40000)
     data = tempfile.mkdtemp(prefix='shellmmo_acct_')
-    env = dict(os.environ, SHELLMMO_DIR=data, SHELLMMO_HUB=T.HUB, SHELLMMO_WB_DELAY='9999999')
+    env = dict(os.environ, SHELLMMO_DIR=data, SHELLMMO_SESS_TOKEN=T.TOKEN, SHELLMMO_WB_DELAY='9999999')
     env.pop('SHELLMMO_OPEN', None)
     srv = subprocess.Popen(['bash', T.GAME, '--server', str(port)], env=env, stdout=subprocess.PIPE,
                            stderr=subprocess.STDOUT, start_new_session=True)
@@ -173,7 +173,7 @@ def main():
         check('a hero cannot enter the world under another name', '+ alice (abc123)' not in out and 'joined' in out)
         check('no password in the server log', 'sekret1' not in out and 'carolpw' not in out)
         shutil.rmtree(data, ignore_errors=True)
-    print(f'{"test_acct/" + T.HUB:<14} {T.PASS:4d} passed  {T.FAIL} failed')
+    print(f'{"test_acct":<14} {T.PASS:4d} passed  {T.FAIL} failed')
     sys.exit(1 if T.FAIL else 0)
 
 

@@ -1,18 +1,30 @@
 # ---------------------------------------------------------------------------
-#  Module 02 - network: a hub relays every line to every connection; the
-#  python3 and socat hubs also bind each connection to one sender id and let
-#  only the world server (secret token) speak as "srv".
+#  Module 02 - network (v7.0: the game runs on the server).
+#  One python3 process is both
+#   - the gate (127.0.0.1:port - players come in over ssh): every player who connects gets a terminal
+#     (a pty) with a game session of their own (--session) running on the
+#     server; the player's computer only sends keys and shows the screen
+#     (term_main in 02b_term.sh). Nothing the player sends is more than a key.
+#   - the hub (127.0.0.1, port + 1): relays every line to every connection.
+#     A connection must prove first that the server started it (AUTH with a
+#     secret token from the environment): the world server speaks as "srv",
+#     the sessions as their player id. Nobody else can talk to the hub.
 #  Line protocol: SM1|TYPE|from|fields...   (see docs/PROTOCOL.md)
 # ---------------------------------------------------------------------------
-HUB_PID="" HUB_DIR="" HUB_TOOL="" WS_PID="" net_up=0 net_buf=""
+HUB_PID="" HUB_TOOL="" WS_PID="" net_up=0 net_buf=""
 
 read -r -d '' PY_HUB <<'PY'
-# Relay hub with anti-spoofing: every connection is bound to the first sender
-# id it uses, and only the world server (which proves itself with a secret
-# token from the environment) may speak as "srv".
-import asyncio, os, sys
+# The gate and the hub (v7.0). Hub: a connection is bound to the id it proves with AUTH - the world
+# server ("srv", SHELLMMO_HUB_TOKEN) or a game session the gate started (its player id,
+# SHELLMMO_SESS_TOKEN); everything from a connection that did not prove itself is dropped.
+# Gate: SMT1|name|cols|rows|gfx, then a pty with "bash GAME --session" for that player; bytes go
+# both ways, an in-band ESC ] 5379 ; rows ; cols BEL resizes the terminal.
+import asyncio, fcntl, os, re, signal, struct, subprocess, sys, termios
 TOKEN = os.environ.get("SHELLMMO_HUB_TOKEN", "").encode()
+STOKEN = os.environ.get("SHELLMMO_SESS_TOKEN", "").encode()
 MAXBUF = 1 << 20
+MAXSESS = int(os.environ.get("SHELLMMO_MAX_PLAYERS", "32") or 32)
+sessions = set()
 clients = set()
 ids = {}          # writer -> bound sender id (b"srv" for the world server)
 # --- interest management (v6.3): in the open world a player only gets the monsters near them -------
@@ -128,14 +140,16 @@ async def handle(reader, writer):
                 continue
             frm = p[2]
             if p[1] == b"AUTH":
-                if TOKEN and frm == b"srv" and len(p) == 4 and p[3] == TOKEN:
-                    me = b"srv"
+                if me is None and len(p) == 4:
+                    if TOKEN and frm == b"srv" and p[3] == TOKEN:
+                        me = b"srv"
+                    elif STOKEN and p[3] == STOKEN and re.fullmatch(rb"[0-9a-f]{6}", frm):
+                        me = frm
+                    if me is not None:
+                        ids[writer] = me
                 continue
-            if me is None and frm != b"srv":
-                me = frm
-            if frm != me:
+            if me is None or frm != me:
                 continue
-            ids[writer] = me
             # private lines: ALOAD/ASAVE (hero data, passwords) and ADM (admin commands) go to the world server only,
             # AR<id> (the server's answer) to that one player only
             typ = p[1]
@@ -148,7 +162,7 @@ async def handle(reader, writer):
                     continue
                 dest = [c for c in clients if ids.get(c) == typ[2:]]
             else:
-                dest = list(clients)
+                dest = [c for c in clients if c in ids]     # (only connections that proved themselves hear anything)
             if me == b"srv" and typ in MONT:
                 sends = monster_dest(typ, line[:-1].split(b"|")[2:], line, dest)
             else:
@@ -183,32 +197,145 @@ async def watchdog(pid):          # the game that started this hub is gone (kill
             os._exit(0)
         except Exception:
             pass
+RESIZE = re.compile(rb"\x1b\]5379;(\d{1,3});(\d{1,3})\x07")
+ENV_KEEP = ("PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "SHELLMMO_DIR", "SHELLMMO_SESS_TOKEN", "SHELLMMO_HUB_PORT",
+            "SHELLMMO_WB_DELAY", "SHELLMMO_CLOCK", "SHELLMMO_WEATHER_DELAY")
+def winsz(fd, rows, cols):
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", max(10, min(rows, 300)), max(20, min(cols, 500)), 0, 0))
+def ctty():
+    os.setsid()
+    fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+async def gate(reader, writer):
+    """one player: a terminal with a game session of their own, on this machine"""
+    loop = asyncio.get_running_loop()
+    master = proc = None
+    try:
+        try:
+            hs = await asyncio.wait_for(reader.readline(), 15)
+        except Exception:
+            return
+        m = re.fullmatch(rb"SMT1\|([A-Za-z0-9_-]{1,12})\|(\d{1,3})\|(\d{1,3})\|(hd|ascii|-)\r?\n", hs)
+        if not m:
+            writer.write(b"SMT1|NO|This is a shellmmorpg 7 server - play over ssh (./shellmmorpg.sh --ssh user@host).\n"); return
+        if len(sessions) >= MAXSESS:
+            writer.write(b"SMT1|NO|The server is full.\n"); return
+        name, rows, cols, gfx = m.group(1).decode(), int(m.group(3)), int(m.group(2)), m.group(4).decode()
+        env = {k: os.environ[k] for k in ENV_KEEP if k in os.environ}
+        env.update(TERM="xterm-256color", SHELLMMO_NAME=name)
+        if gfx != "-":
+            env["SHELLMMO_GFX"] = gfx
+        master, slave = os.openpty()
+        winsz(master, rows, cols)
+        proc = subprocess.Popen(["bash", GAME, "--session"], stdin=slave, stdout=slave, stderr=slave, env=env,
+                                cwd=os.environ.get("SHELLMMO_DIR") or "/", preexec_fn=ctty, close_fds=True)
+        os.close(slave)
+        os.set_blocking(master, False)
+        sessions.add(proc)
+        writer.write(b"SMT1|OK\n")
+        done = asyncio.Event()
+        def from_game():
+            try:
+                d = os.read(master, 65536)
+            except BlockingIOError:
+                return
+            except OSError:
+                d = b""
+            if not d:
+                loop.remove_reader(master); done.set(); return
+            if not writer.is_closing():
+                if writer.transport.get_write_buffer_size() > 4 * MAXBUF:
+                    done.set(); return              # the player does not read: give up
+                writer.write(d)
+        loop.add_reader(master, from_game)
+        async def from_player():
+            while True:
+                d = await reader.read(4096)
+                if not d:
+                    break
+                for r in RESIZE.finditer(d):
+                    winsz(master, int(r.group(1)), int(r.group(2)))
+                d = RESIZE.sub(b"", d)
+                if d:
+                    try:
+                        os.write(master, d)
+                    except OSError:
+                        pass                        # (the game is busy: a key is lost, never the server)
+            done.set()
+        async def game_alive():                     # (a child of the game may keep the pty open after it quit)
+            while proc.poll() is None:
+                await asyncio.sleep(0.3)
+            await asyncio.sleep(0.3)
+            from_game()
+            done.set()
+        t = loop.create_task(from_player())
+        w = loop.create_task(game_alive())
+        await done.wait()
+        t.cancel(); w.cancel()
+    except Exception:
+        pass
+    finally:
+        if proc is not None:
+            if proc.poll() is None:                 # the player is gone: the game saves and quits
+                for sig in (signal.SIGHUP, signal.SIGCONT):
+                    try:
+                        os.killpg(proc.pid, sig)
+                    except OSError:
+                        pass
+            for _ in range(80):
+                if proc.poll() is not None:
+                    break
+                try:
+                    while os.read(master, 65536):   # keep draining, a full pty would block its goodbye
+                        pass
+                except OSError:
+                    pass
+                await asyncio.sleep(0.1)
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)         # the game and whatever it left behind
+            except OSError:
+                pass
+            proc.wait()
+            sessions.discard(proc)
+        if master is not None:
+            try:
+                loop.remove_reader(master)
+            except Exception:
+                pass
+            os.close(master)
+        try:
+            writer.close()
+        except Exception:
+            pass
+GAME = ""
 async def main():
-    if len(sys.argv) > 3 and sys.argv[3].isdigit():
-        asyncio.get_running_loop().create_task(watchdog(int(sys.argv[3])))
-    server = await asyncio.start_server(handle, (sys.argv[2] if len(sys.argv) > 2 else None) or None, int(sys.argv[1]))
-    async with server:
-        await server.serve_forever()
+    global GAME
+    hub_port, gate_port, _, parent, GAME = sys.argv[1:6]
+    if parent.isdigit():
+        asyncio.get_running_loop().create_task(watchdog(int(parent)))
+    hub = await asyncio.start_server(handle, "127.0.0.1", int(hub_port))
+    gt = await asyncio.start_server(gate, "127.0.0.1", int(gate_port))   # players come in over ssh, never over the network
+    async with hub, gt:
+        await asyncio.gather(hub.serve_forever(), gt.serve_forever())
 try:
     asyncio.run(main())
 except KeyboardInterrupt:
     pass
 PY
 
-pick_hub_tool() {  # python3 and socat hubs enforce sender ids; the ncat broker relays blindly
-  if [[ $SHELLMMO_HUB =~ ^(ncat|python3|socat)$ ]] && command -v "$SHELLMMO_HUB" >/dev/null 2>&1; then HUB_TOOL=$SHELLMMO_HUB
-  elif command -v python3 >/dev/null 2>&1; then HUB_TOOL=python3
-  elif command -v socat >/dev/null 2>&1; then HUB_TOOL=socat
-  elif command -v ncat >/dev/null 2>&1; then HUB_TOOL=ncat
-  elif command -v nc >/dev/null 2>&1 && nc --version 2>&1 | grep -qi ncat; then HUB_TOOL=nc
-  else return 1; fi
-  if [[ $HUB_TOOL == @(python3|socat) && -z $SHELLMMO_HUB_TOKEN ]]; then
-    local t=""
-    [[ -r /dev/urandom ]] && t=$(od -An -N16 -tx1 /dev/urandom 2>/dev/null)
-    t=${t//[^0-9a-f]/}
-    (( ${#t} >= 16 )) || printf -v t '%04x%04x%04x%04x' $RANDOM $RANDOM $RANDOM $RANDOM
-    export SHELLMMO_HUB_TOKEN=$t
-  fi
+new_token() {  # -> TOK (32 hex digits)
+  local t=""
+  [[ -r /dev/urandom ]] && t=$(od -An -N16 -tx1 /dev/urandom 2>/dev/null)
+  t=${t//[^0-9a-f]/}
+  (( ${#t} >= 16 )) || printf -v t '%04x%04x%04x%04x%04x%04x' $RANDOM $RANDOM $RANDOM $RANDOM $RANDOM $RANDOM
+  TOK=$t
+}
+
+pick_hub_tool() {  # v7.0: the gate needs ptys - python3 only
+  command -v python3 >/dev/null 2>&1 || return 1
+  HUB_TOOL=python3
+  [[ -n $SHELLMMO_HUB_TOKEN ]] || { new_token; export SHELLMMO_HUB_TOKEN=$TOK; }
+  [[ -n $SHELLMMO_SESS_TOKEN ]] || { new_token; export SHELLMMO_SESS_TOKEN=$TOK; }
+  export SHELLMMO_HUB_PORT=$HUB_PORT
 }
 
 alive() { [[ -n $1 ]] && kill -0 "$1" 2>/dev/null; }
@@ -216,21 +343,13 @@ alive() { [[ -n $1 ]] && kill -0 "$1" 2>/dev/null; }
 start_hub() {
   local run=() i
   command -v setsid >/dev/null 2>&1 && run=(setsid)
-  case $HUB_TOOL in
-    ncat|nc) "${run[@]}" "$HUB_TOOL" --broker -l ${NET_BIND:+"$NET_BIND"} "$NET_PORT" </dev/null >/dev/null 2>&1 & ;;
-    python3) "${run[@]}" python3 -I -c "$PY_HUB" "$NET_PORT" "$NET_BIND" "$$" </dev/null >/dev/null 2>&1 & ;;
-    socat)
-      [[ -n $HUB_DIR ]] || HUB_DIR=$(mktemp -d)
-      : > "$HUB_DIR/log"
-      "${run[@]}" socat "TCP-LISTEN:$NET_PORT,reuseaddr,fork${NET_BIND:+,bind=$NET_BIND}" "EXEC:bash $SELF --hub-handler $HUB_DIR/log" \
-        </dev/null >/dev/null 2>&1 & ;;
-  esac
+  "${run[@]}" python3 -I -c "$PY_HUB" "$HUB_PORT" "$NET_PORT" 127.0.0.1 "$$" "$SELF" </dev/null >/dev/null 2>&1 &
   HUB_PID=$!
   disown "$HUB_PID" 2>/dev/null
   for (( i = 0; i < 30; i++ )); do
     sleep 0.1
     alive "$HUB_PID" || return 1
-    (exec 3<>"/dev/tcp/${NET_BIND:-127.0.0.1}/$NET_PORT") 2>/dev/null && return 0
+    (exec 3<>"/dev/tcp/127.0.0.1/$HUB_PORT") 2>/dev/null && return 0
   done
   return 1
 }
@@ -254,15 +373,15 @@ kill_tree() {
 stop_all() {
   kill_tree "$WS_PID"; WS_PID=""
   kill_tree "$HUB_PID"; HUB_PID=""
-  [[ -n $HUB_DIR ]] && rm -rf "$HUB_DIR"
 }
 
-net_connect() {
-  timeout 2 bash -c 'exec 3<>"/dev/tcp/$0/$1"' "$NET_HOST" "$NET_PORT" 2>/dev/null || return 1
-  { exec 7<>"/dev/tcp/$NET_HOST/$NET_PORT"; } 2>/dev/null || return 1
+net_connect() {  # to the hub - always on this machine (v7.0)
+  timeout 2 bash -c 'exec 3<>"/dev/tcp/127.0.0.1/$0"' "$HUB_PORT" 2>/dev/null || return 1
+  { exec 7<>"/dev/tcp/127.0.0.1/$HUB_PORT"; } 2>/dev/null || return 1
   net_up=1 net_buf=""
-  # the world server proves to the hub that it may speak as "srv"
-  [[ $MODE == @(world|server) && -n $SHELLMMO_HUB_TOKEN ]] && send AUTH srv "$SHELLMMO_HUB_TOKEN"
+  # prove to the hub that the server started us: the world server speaks as "srv", a game session as its player
+  if [[ $MODE == @(world|server) ]]; then send AUTH srv "$SHELLMMO_HUB_TOKEN"
+  else send AUTH "$MY_ID" "$SHELLMMO_SESS_TOKEN"; fi
   return 0
 }
 

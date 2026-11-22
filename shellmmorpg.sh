@@ -2,12 +2,11 @@
 # ============================================================================
 #  shellmmorpg - a real-time multiplayer RPG for your terminal, in pure bash
 # ============================================================================
-#  ./shellmmorpg.sh                     start a world and play (friends can join)
-#  ./shellmmorpg.sh --join HOST[:PORT]  join a friend's world
-#  ./shellmmorpg.sh --server [PORT]     dedicated server without a player
-#  ./shellmmorpg.sh --port PORT         port to host on (default 4747)
-#  ./shellmmorpg.sh --bind ADDR         listen only on this address (127.0.0.1 behind ssh)
-#  ./shellmmorpg.sh --ssh [USER@]HOST   play on a server over ssh (see deploy/ and docs/SERVER.md)
+#  ./shellmmorpg.sh                     start a world and play (friends come in over ssh)
+#  ./shellmmorpg.sh --ssh [USER@]HOST   play on a server - players always come in over ssh
+#  ./shellmmorpg.sh --server [PORT]     dedicated server without a player (see deploy/, docs/SERVER.md)
+#  ./shellmmorpg.sh --port PORT         port to host on, on 127.0.0.1 (default 4747)
+#  ./shellmmorpg.sh --join [PORT]       on the server: open the game (what ssh players run)
 #  ./shellmmorpg.sh --name NAME         character name (default: $USER)
 #  ./shellmmorpg.sh --admin add|remove|list [NAME]   who is admin on this server
 #  ./shellmmorpg.sh --ascii / --hd      classic ASCII or HD emoji graphics ([v] in game)
@@ -27,15 +26,16 @@
 #  Since 6.0: more of everything - 44 creatures, 22 rares, 4 dungeons, 4 world
 #  bosses, 8 questlines, 20 uniques, 6 materials, 54 more collectables.
 #
-#  Hosting needs python3, socat or ncat (force one: SHELLMMO_HUB=socat).
-#  Joining needs nothing but bash. Characters are saved in ~/.shellmmorpg/
+#  Since 7.0 the game runs on the server and players reach it only over ssh:
+#  your computer only sends keys. Hosting needs python3 (and sshd for
+#  friends), playing needs ssh. Heroes are saved on the server.
 #  Needs bash 4.3+, a 256-color UTF-8 terminal, at least 100x30.
 #  In game press [?] for all controls. Guides: README.md and docs/.
 #
 #  This file is built from src/*.sh and world.txt by build.sh - edit those.
 # ============================================================================
 
-VERSION="6.4"
+VERSION="7.0"
 DATA_DIR="${SHELLMMO_DIR:-$HOME/.shellmmorpg}"
 SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
 # string lengths must count characters, not bytes (emoji graphics): make sure we run in a UTF-8 locale
@@ -50,59 +50,32 @@ shopt -s extglob
 shopt -u patsub_replacement 2>/dev/null   # "&" in replacements stays literal
 set -f                                   # no globbing on word splits
 
-hub_handler() {   # socat backend: one process per client, relays via a shared log
-  local log=$1 line tp me="" r f mf="$1.me.$$"
-  # relay the log to this client - except the private lines meant for others (hero data and passwords
-  # go to the world server only, AR<id> answers to that one player); awk learns who we are from $mf
-  { tail -n0 -F "$log" 2>/dev/null | awk -F'|' -v mf="$mf" '
-      function who() { if (me == "") { getline me < mf; close(mf) } return me }
-      { t = $2
-        if (t == "ALOAD" || t == "ASAVE" || t == "ADM") { if (who() != "srv") next }
-        else if (substr(t, 1, 2) == "AR" && length(t) == 8) { if (t != "AR" who()) next }
-        print; fflush() }'; } &
-  tp=$!
-  while IFS= read -r line; do
-    (( ${#line} <= 2048 )) && [[ $line == SM1\|*\|* ]] || continue
-    r=${line#SM1|}; f=${r#*|}; f=${f%%|*}             # sender id (same rules as the python hub)
-    if [[ $r == AUTH\|srv\|* ]]; then
-      [[ -n $SHELLMMO_HUB_TOKEN && ${r#AUTH|srv|} == "$SHELLMMO_HUB_TOKEN" ]] && { me=srv; printf '%s\n' srv > "$mf"; }
-      continue
-    fi
-    [[ -z $me && $f != srv ]] && { me=$f; printf '%s\n' "$me" > "$mf"; }
-    [[ $f == "$me" ]] || continue
-    case ${r%%|*} in
-      ALOAD|ASAVE|ADM) [[ $me == srv ]] && continue ;;
-      AR??????) [[ $me == srv ]] || continue ;;
-    esac
-    printf '%s\n' "$line" >> "$log"
-  done
-  pkill -P "$tp" 2>/dev/null; kill "$tp" 2>/dev/null; rm -f "$mf"
-}
-
 die() { echo "shellmmorpg: $*" >&2; exit 1; }
 
-MODE=host NET_BIND="" NET_HOST=127.0.0.1 NET_PORT=4747 MY_NAME="${SHELLMMO_NAME:-${USER:-hero}}" GFX=${SHELLMMO_GFX:-}
+MODE=host NET_HOST=127.0.0.1 NET_PORT=4747 MY_NAME="${SHELLMMO_NAME:-${USER:-hero}}" GFX=${SHELLMMO_GFX:-}
 while (( $# )); do
   case $1 in
     -h|--help) awk 'NR > 2 && !/^#/ { exit } NR > 2 && !/====/ { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
-    --hub-handler)  hub_handler "$2"; exit 0 ;;
+    --session) MODE=session ;;                     # v7.0: a player's game, started by the gate on the server
     --world-server) MODE=world NET_PORT=$2; shift ;;
     --server) MODE=server; if [[ $2 =~ ^[0-9]+$ ]]; then NET_PORT=$2; shift; fi ;;
     --port)   [[ $2 =~ ^[0-9]+$ ]] || die "--port needs a number"; NET_PORT=$2; shift ;;
-    --join)
-      [[ -n $2 ]] || die "--join needs an address, e.g. --join 192.168.1.20:4747"
+    --join)                                        # v7.0: only on the server itself - players come in over ssh
       MODE=join
-      if [[ $2 == *:* && ${2##*:} =~ ^[0-9]+$ ]]; then NET_HOST=${2%:*} NET_PORT=${2##*:}; else NET_HOST=$2; fi
-      shift ;;
-    --bind) [[ $2 =~ ^[A-Za-z0-9.:_-]+$ ]] || die "--bind needs an address, e.g. 127.0.0.1"; NET_BIND=$2; shift ;;
-    --ssh)
+      if [[ $2 =~ ^[0-9]+$ ]]; then NET_PORT=$2; shift
+      elif [[ $2 =~ ^(127\.0\.0\.1|localhost):([0-9]+)$ ]]; then NET_PORT=${BASH_REMATCH[2]}; shift
+      elif [[ $2 == @(127.0.0.1|localhost) ]]; then shift
+      elif [[ -n $2 && $2 != -* ]]; then
+        die "the game is only reachable over ssh: ./shellmmorpg.sh --ssh user@${2%:*}   (see docs/SERVER.md)"
+      fi ;;
+    --bind) die "--bind is gone in 7.0: the game listens on 127.0.0.1 only - players come in over ssh" ;;
+    --ssh)                                         # (7.0: the only way for players to reach a world)
       [[ $2 =~ ^[A-Za-z0-9._@-]+(:[0-9]+)?$ ]] || die "--ssh needs [user@]host[:sshport], e.g. --ssh me@play.example.org"
       command -v ssh >/dev/null 2>&1 || die "--ssh needs the ssh command"
       ssh_to=${2%%:*} ssh_port=()
       [[ $2 == *:* ]] && ssh_port=(-p "${2##*:}")
-      ssh_args=(); [[ -n $GFX ]] && ssh_args+=("--$GFX")
-      exec ssh -t "${ssh_port[@]}" "$ssh_to" "${SHELLMMO_REMOTE:-shellmmorpg-play}" "${ssh_args[@]}" ;;
-    --name) [[ -n $2 ]] || die "--name needs a value"; MY_NAME=$2; shift ;;
+      MODE=ssh; shift ;;
+    --name) [[ -n $2 ]] || die "--name needs a value"; MY_NAME=$2 NAME_SET=1; shift ;;
     --admin) MODE=admin ADM_OP=$2 ADM_ARG=""; [[ -n $2 ]] && shift
              if [[ $ADM_OP == @(add|remove) ]]; then ADM_ARG=$2; [[ -n $2 ]] && shift; fi ;;
     --ascii) GFX=ascii ;;
@@ -111,10 +84,49 @@ while (( $# )); do
   esac
   shift
 done
+if [[ $MODE == ssh ]]; then                      # (after all options, so --name / --hd / --ascii may come before or after)
+  ssh_args=(); [[ -n $GFX ]] && ssh_args+=("--$GFX")
+  [[ -n $NAME_SET && $MY_NAME =~ ^[A-Za-z0-9_-]{1,12}$ ]] && ssh_args+=(--name "$MY_NAME")
+  exec ssh -t "${ssh_port[@]}" "$ssh_to" "${SHELLMMO_REMOTE:-shellmmorpg-play}" "${ssh_args[@]}"
+fi
 [[ $NET_HOST =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid host '$NET_HOST'"
 (( NET_PORT >= 1 && NET_PORT <= 65535 )) || die "invalid port '$NET_PORT'"
 MY_NAME=${MY_NAME//[^A-Za-z0-9_-]/}; MY_NAME=${MY_NAME:0:12}
 [[ -n $MY_NAME ]] || MY_NAME="hero$(( RANDOM % 1000 ))"
+HUB_PORT=${SHELLMMO_HUB_PORT:-$(( NET_PORT + 1 ))}       # v7.0: the hub listens on 127.0.0.1 only, next to the public port
+[[ $HUB_PORT =~ ^[1-9][0-9]{0,4}$ ]] && (( HUB_PORT <= 65535 )) || die "invalid SHELLMMO_HUB_PORT"
+
+# --- v7.0: joining = a terminal for the game that runs on the server -------------------------------
+term_size() { local s; s=$(stty size 2>/dev/null); TROWS=${s% *} TCOLS=${s#* }; [[ $TROWS =~ ^[0-9]{1,3}$ && $TCOLS =~ ^[0-9]{1,3}$ ]] || TROWS=40 TCOLS=120; }
+term_main() {  # connect to the gate, then only send keys and show what comes back
+  local line k buf
+  T_RSZ=0
+  [[ -t 0 && -t 1 ]] || die "--join needs a terminal"
+  { exec 3<>"/dev/tcp/127.0.0.1/$NET_PORT"; } 2>/dev/null || die "no world on port $NET_PORT on this machine - is the server running?"
+  term_size
+  printf 'SMT1|%s|%s|%s|%s\n' "$MY_NAME" "$TCOLS" "$TROWS" "${GFX:--}" >&3
+  IFS= read -r -t 10 -u 3 line || die "$NET_HOST:$NET_PORT does not answer like a shellmmorpg 7 server"
+  line=${line%$'\r'}
+  [[ $line == SMT1\|NO\|* ]] && die "${line#SMT1|NO|}"
+  [[ $line == "SMT1|OK" ]] || die "$NET_HOST:$NET_PORT is not a shellmmorpg 7 server (an older one? update both sides)"
+  T_OLD=$(stty -g)
+  stty raw -echo
+  trap 'stty "$T_OLD" 2>/dev/null; printf "\e[0m\e[?25h\e[?7h\e[?1049l"; kill "$T_CAT" 2>/dev/null' EXIT
+  trap 'T_RSZ=1' WINCH
+  trap '' INT QUIT TSTP                          # (raw mode: ctrl+c travels to the game as a key)
+  cat <&3 &
+  T_CAT=$!
+  while kill -0 "$T_CAT" 2>/dev/null; do
+    if IFS= read -rsn1 -d '' -t 0.25 k; then
+      buf=$k                                     # an arrow key is several bytes: send them together
+      while (( ${#buf} < 512 )) && IFS= read -rsn1 -d '' -t 0.002 k; do buf+=$k; done
+      [[ -n $buf ]] && { printf '%s' "$buf" >&3 2>/dev/null || break; }
+    fi
+    if (( T_RSZ )); then T_RSZ=0; term_size; printf '\e]5379;%s;%s\a' "$TROWS" "$TCOLS" >&3 2>/dev/null; fi
+  done
+  exit 0
+}
+[[ $MODE == join ]] && term_main
 if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 3) )); then
   die "needs bash 4.3 or newer (you have $BASH_VERSION)"
 fi
@@ -2575,20 +2587,32 @@ RUMORS+=("Farmer Hesk swears rats as big as dogs live under the old mill on Silv
          "Something called the Star Devourer was seen over Starfall Crater. The stars above it are going out, one by one.")
 
 # ---------------------------------------------------------------------------
-#  Module 02 - network: a hub relays every line to every connection; the
-#  python3 and socat hubs also bind each connection to one sender id and let
-#  only the world server (secret token) speak as "srv".
+#  Module 02 - network (v7.0: the game runs on the server).
+#  One python3 process is both
+#   - the gate (127.0.0.1:port - players come in over ssh): every player who connects gets a terminal
+#     (a pty) with a game session of their own (--session) running on the
+#     server; the player's computer only sends keys and shows the screen
+#     (term_main in 02b_term.sh). Nothing the player sends is more than a key.
+#   - the hub (127.0.0.1, port + 1): relays every line to every connection.
+#     A connection must prove first that the server started it (AUTH with a
+#     secret token from the environment): the world server speaks as "srv",
+#     the sessions as their player id. Nobody else can talk to the hub.
 #  Line protocol: SM1|TYPE|from|fields...   (see docs/PROTOCOL.md)
 # ---------------------------------------------------------------------------
-HUB_PID="" HUB_DIR="" HUB_TOOL="" WS_PID="" net_up=0 net_buf=""
+HUB_PID="" HUB_TOOL="" WS_PID="" net_up=0 net_buf=""
 
 read -r -d '' PY_HUB <<'PY'
-# Relay hub with anti-spoofing: every connection is bound to the first sender
-# id it uses, and only the world server (which proves itself with a secret
-# token from the environment) may speak as "srv".
-import asyncio, os, sys
+# The gate and the hub (v7.0). Hub: a connection is bound to the id it proves with AUTH - the world
+# server ("srv", SHELLMMO_HUB_TOKEN) or a game session the gate started (its player id,
+# SHELLMMO_SESS_TOKEN); everything from a connection that did not prove itself is dropped.
+# Gate: SMT1|name|cols|rows|gfx, then a pty with "bash GAME --session" for that player; bytes go
+# both ways, an in-band ESC ] 5379 ; rows ; cols BEL resizes the terminal.
+import asyncio, fcntl, os, re, signal, struct, subprocess, sys, termios
 TOKEN = os.environ.get("SHELLMMO_HUB_TOKEN", "").encode()
+STOKEN = os.environ.get("SHELLMMO_SESS_TOKEN", "").encode()
 MAXBUF = 1 << 20
+MAXSESS = int(os.environ.get("SHELLMMO_MAX_PLAYERS", "32") or 32)
+sessions = set()
 clients = set()
 ids = {}          # writer -> bound sender id (b"srv" for the world server)
 # --- interest management (v6.3): in the open world a player only gets the monsters near them -------
@@ -2704,14 +2728,16 @@ async def handle(reader, writer):
                 continue
             frm = p[2]
             if p[1] == b"AUTH":
-                if TOKEN and frm == b"srv" and len(p) == 4 and p[3] == TOKEN:
-                    me = b"srv"
+                if me is None and len(p) == 4:
+                    if TOKEN and frm == b"srv" and p[3] == TOKEN:
+                        me = b"srv"
+                    elif STOKEN and p[3] == STOKEN and re.fullmatch(rb"[0-9a-f]{6}", frm):
+                        me = frm
+                    if me is not None:
+                        ids[writer] = me
                 continue
-            if me is None and frm != b"srv":
-                me = frm
-            if frm != me:
+            if me is None or frm != me:
                 continue
-            ids[writer] = me
             # private lines: ALOAD/ASAVE (hero data, passwords) and ADM (admin commands) go to the world server only,
             # AR<id> (the server's answer) to that one player only
             typ = p[1]
@@ -2724,7 +2750,7 @@ async def handle(reader, writer):
                     continue
                 dest = [c for c in clients if ids.get(c) == typ[2:]]
             else:
-                dest = list(clients)
+                dest = [c for c in clients if c in ids]     # (only connections that proved themselves hear anything)
             if me == b"srv" and typ in MONT:
                 sends = monster_dest(typ, line[:-1].split(b"|")[2:], line, dest)
             else:
@@ -2759,32 +2785,145 @@ async def watchdog(pid):          # the game that started this hub is gone (kill
             os._exit(0)
         except Exception:
             pass
+RESIZE = re.compile(rb"\x1b\]5379;(\d{1,3});(\d{1,3})\x07")
+ENV_KEEP = ("PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "SHELLMMO_DIR", "SHELLMMO_SESS_TOKEN", "SHELLMMO_HUB_PORT",
+            "SHELLMMO_WB_DELAY", "SHELLMMO_CLOCK", "SHELLMMO_WEATHER_DELAY")
+def winsz(fd, rows, cols):
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", max(10, min(rows, 300)), max(20, min(cols, 500)), 0, 0))
+def ctty():
+    os.setsid()
+    fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+async def gate(reader, writer):
+    """one player: a terminal with a game session of their own, on this machine"""
+    loop = asyncio.get_running_loop()
+    master = proc = None
+    try:
+        try:
+            hs = await asyncio.wait_for(reader.readline(), 15)
+        except Exception:
+            return
+        m = re.fullmatch(rb"SMT1\|([A-Za-z0-9_-]{1,12})\|(\d{1,3})\|(\d{1,3})\|(hd|ascii|-)\r?\n", hs)
+        if not m:
+            writer.write(b"SMT1|NO|This is a shellmmorpg 7 server - play over ssh (./shellmmorpg.sh --ssh user@host).\n"); return
+        if len(sessions) >= MAXSESS:
+            writer.write(b"SMT1|NO|The server is full.\n"); return
+        name, rows, cols, gfx = m.group(1).decode(), int(m.group(3)), int(m.group(2)), m.group(4).decode()
+        env = {k: os.environ[k] for k in ENV_KEEP if k in os.environ}
+        env.update(TERM="xterm-256color", SHELLMMO_NAME=name)
+        if gfx != "-":
+            env["SHELLMMO_GFX"] = gfx
+        master, slave = os.openpty()
+        winsz(master, rows, cols)
+        proc = subprocess.Popen(["bash", GAME, "--session"], stdin=slave, stdout=slave, stderr=slave, env=env,
+                                cwd=os.environ.get("SHELLMMO_DIR") or "/", preexec_fn=ctty, close_fds=True)
+        os.close(slave)
+        os.set_blocking(master, False)
+        sessions.add(proc)
+        writer.write(b"SMT1|OK\n")
+        done = asyncio.Event()
+        def from_game():
+            try:
+                d = os.read(master, 65536)
+            except BlockingIOError:
+                return
+            except OSError:
+                d = b""
+            if not d:
+                loop.remove_reader(master); done.set(); return
+            if not writer.is_closing():
+                if writer.transport.get_write_buffer_size() > 4 * MAXBUF:
+                    done.set(); return              # the player does not read: give up
+                writer.write(d)
+        loop.add_reader(master, from_game)
+        async def from_player():
+            while True:
+                d = await reader.read(4096)
+                if not d:
+                    break
+                for r in RESIZE.finditer(d):
+                    winsz(master, int(r.group(1)), int(r.group(2)))
+                d = RESIZE.sub(b"", d)
+                if d:
+                    try:
+                        os.write(master, d)
+                    except OSError:
+                        pass                        # (the game is busy: a key is lost, never the server)
+            done.set()
+        async def game_alive():                     # (a child of the game may keep the pty open after it quit)
+            while proc.poll() is None:
+                await asyncio.sleep(0.3)
+            await asyncio.sleep(0.3)
+            from_game()
+            done.set()
+        t = loop.create_task(from_player())
+        w = loop.create_task(game_alive())
+        await done.wait()
+        t.cancel(); w.cancel()
+    except Exception:
+        pass
+    finally:
+        if proc is not None:
+            if proc.poll() is None:                 # the player is gone: the game saves and quits
+                for sig in (signal.SIGHUP, signal.SIGCONT):
+                    try:
+                        os.killpg(proc.pid, sig)
+                    except OSError:
+                        pass
+            for _ in range(80):
+                if proc.poll() is not None:
+                    break
+                try:
+                    while os.read(master, 65536):   # keep draining, a full pty would block its goodbye
+                        pass
+                except OSError:
+                    pass
+                await asyncio.sleep(0.1)
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)         # the game and whatever it left behind
+            except OSError:
+                pass
+            proc.wait()
+            sessions.discard(proc)
+        if master is not None:
+            try:
+                loop.remove_reader(master)
+            except Exception:
+                pass
+            os.close(master)
+        try:
+            writer.close()
+        except Exception:
+            pass
+GAME = ""
 async def main():
-    if len(sys.argv) > 3 and sys.argv[3].isdigit():
-        asyncio.get_running_loop().create_task(watchdog(int(sys.argv[3])))
-    server = await asyncio.start_server(handle, (sys.argv[2] if len(sys.argv) > 2 else None) or None, int(sys.argv[1]))
-    async with server:
-        await server.serve_forever()
+    global GAME
+    hub_port, gate_port, _, parent, GAME = sys.argv[1:6]
+    if parent.isdigit():
+        asyncio.get_running_loop().create_task(watchdog(int(parent)))
+    hub = await asyncio.start_server(handle, "127.0.0.1", int(hub_port))
+    gt = await asyncio.start_server(gate, "127.0.0.1", int(gate_port))   # players come in over ssh, never over the network
+    async with hub, gt:
+        await asyncio.gather(hub.serve_forever(), gt.serve_forever())
 try:
     asyncio.run(main())
 except KeyboardInterrupt:
     pass
 PY
 
-pick_hub_tool() {  # python3 and socat hubs enforce sender ids; the ncat broker relays blindly
-  if [[ $SHELLMMO_HUB =~ ^(ncat|python3|socat)$ ]] && command -v "$SHELLMMO_HUB" >/dev/null 2>&1; then HUB_TOOL=$SHELLMMO_HUB
-  elif command -v python3 >/dev/null 2>&1; then HUB_TOOL=python3
-  elif command -v socat >/dev/null 2>&1; then HUB_TOOL=socat
-  elif command -v ncat >/dev/null 2>&1; then HUB_TOOL=ncat
-  elif command -v nc >/dev/null 2>&1 && nc --version 2>&1 | grep -qi ncat; then HUB_TOOL=nc
-  else return 1; fi
-  if [[ $HUB_TOOL == @(python3|socat) && -z $SHELLMMO_HUB_TOKEN ]]; then
-    local t=""
-    [[ -r /dev/urandom ]] && t=$(od -An -N16 -tx1 /dev/urandom 2>/dev/null)
-    t=${t//[^0-9a-f]/}
-    (( ${#t} >= 16 )) || printf -v t '%04x%04x%04x%04x' $RANDOM $RANDOM $RANDOM $RANDOM
-    export SHELLMMO_HUB_TOKEN=$t
-  fi
+new_token() {  # -> TOK (32 hex digits)
+  local t=""
+  [[ -r /dev/urandom ]] && t=$(od -An -N16 -tx1 /dev/urandom 2>/dev/null)
+  t=${t//[^0-9a-f]/}
+  (( ${#t} >= 16 )) || printf -v t '%04x%04x%04x%04x%04x%04x' $RANDOM $RANDOM $RANDOM $RANDOM $RANDOM $RANDOM
+  TOK=$t
+}
+
+pick_hub_tool() {  # v7.0: the gate needs ptys - python3 only
+  command -v python3 >/dev/null 2>&1 || return 1
+  HUB_TOOL=python3
+  [[ -n $SHELLMMO_HUB_TOKEN ]] || { new_token; export SHELLMMO_HUB_TOKEN=$TOK; }
+  [[ -n $SHELLMMO_SESS_TOKEN ]] || { new_token; export SHELLMMO_SESS_TOKEN=$TOK; }
+  export SHELLMMO_HUB_PORT=$HUB_PORT
 }
 
 alive() { [[ -n $1 ]] && kill -0 "$1" 2>/dev/null; }
@@ -2792,21 +2931,13 @@ alive() { [[ -n $1 ]] && kill -0 "$1" 2>/dev/null; }
 start_hub() {
   local run=() i
   command -v setsid >/dev/null 2>&1 && run=(setsid)
-  case $HUB_TOOL in
-    ncat|nc) "${run[@]}" "$HUB_TOOL" --broker -l ${NET_BIND:+"$NET_BIND"} "$NET_PORT" </dev/null >/dev/null 2>&1 & ;;
-    python3) "${run[@]}" python3 -I -c "$PY_HUB" "$NET_PORT" "$NET_BIND" "$$" </dev/null >/dev/null 2>&1 & ;;
-    socat)
-      [[ -n $HUB_DIR ]] || HUB_DIR=$(mktemp -d)
-      : > "$HUB_DIR/log"
-      "${run[@]}" socat "TCP-LISTEN:$NET_PORT,reuseaddr,fork${NET_BIND:+,bind=$NET_BIND}" "EXEC:bash $SELF --hub-handler $HUB_DIR/log" \
-        </dev/null >/dev/null 2>&1 & ;;
-  esac
+  "${run[@]}" python3 -I -c "$PY_HUB" "$HUB_PORT" "$NET_PORT" 127.0.0.1 "$$" "$SELF" </dev/null >/dev/null 2>&1 &
   HUB_PID=$!
   disown "$HUB_PID" 2>/dev/null
   for (( i = 0; i < 30; i++ )); do
     sleep 0.1
     alive "$HUB_PID" || return 1
-    (exec 3<>"/dev/tcp/${NET_BIND:-127.0.0.1}/$NET_PORT") 2>/dev/null && return 0
+    (exec 3<>"/dev/tcp/127.0.0.1/$HUB_PORT") 2>/dev/null && return 0
   done
   return 1
 }
@@ -2830,15 +2961,15 @@ kill_tree() {
 stop_all() {
   kill_tree "$WS_PID"; WS_PID=""
   kill_tree "$HUB_PID"; HUB_PID=""
-  [[ -n $HUB_DIR ]] && rm -rf "$HUB_DIR"
 }
 
-net_connect() {
-  timeout 2 bash -c 'exec 3<>"/dev/tcp/$0/$1"' "$NET_HOST" "$NET_PORT" 2>/dev/null || return 1
-  { exec 7<>"/dev/tcp/$NET_HOST/$NET_PORT"; } 2>/dev/null || return 1
+net_connect() {  # to the hub - always on this machine (v7.0)
+  timeout 2 bash -c 'exec 3<>"/dev/tcp/127.0.0.1/$0"' "$HUB_PORT" 2>/dev/null || return 1
+  { exec 7<>"/dev/tcp/127.0.0.1/$HUB_PORT"; } 2>/dev/null || return 1
   net_up=1 net_buf=""
-  # the world server proves to the hub that it may speak as "srv"
-  [[ $MODE == @(world|server) && -n $SHELLMMO_HUB_TOKEN ]] && send AUTH srv "$SHELLMMO_HUB_TOKEN"
+  # prove to the hub that the server started us: the world server speaks as "srv", a game session as its player
+  if [[ $MODE == @(world|server) ]]; then send AUTH srv "$SHELLMMO_HUB_TOKEN"
+  else send AUTH "$MY_ID" "$SHELLMMO_SESS_TOKEN"; fi
   return 0
 }
 
@@ -3989,7 +4120,7 @@ inv_end() { INV_TOWN=-1 INV_WAVE=0 INV_MONS="" INV_NEXT=$(( NOW + ${SHELLMMO_INV
 #  ASAVE). ASAVE sends the hero's save text in chunks of at most 1400
 #  characters, newlines written as the unit separator (\x1f).
 #  The hub delivers ALOAD/ASAVE to the world server only and AR<id> to the
-#  player <id> only (python3 and socat hubs).
+#  player <id> only.
 # ---------------------------------------------------------------------------
 ACC_DIR="$DATA_DIR/chars" ACCT_ON=0 ACC_HASHER="" ACC_CHUNK=1400 ACC_MAXCH=60 ACC_STALE=8000
 declare -A ACC_NAME=() ACC_NEW=() ACC_PASS=() ACC_BUF=() ACC_NS=() ACC_SEEN=() ACC_FAIL=() ACC_LOCK=() ACC_RATE=() ACC_SVN=() ACC_SVT=()
@@ -6690,7 +6821,8 @@ ui_trade() {
 #  sprites, colored ground) and the classic 1-column ASCII mode ([v] switches),
 #  text width helpers, and the tile-row cache that makes map frames cheap.
 # ---------------------------------------------------------------------------
-GFX_FILE="$DATA_DIR/config" GFX_NEW=0 TW=1 TW2=0 MW=81 PLX=x
+GFX_FILE="$DATA_DIR/config"; [[ $MODE == session ]] && GFX_FILE="$DATA_DIR/prefs/${MY_NAME,,}.gfx"   # v7.0: per player on the server
+GFX_NEW=0 TW=1 TW2=0 MW=81 PLX=x
 if [[ -z $GFX ]]; then
   [[ -f $GFX_FILE ]] && GFX=$(sed -n 's/^GFX=//p' "$GFX_FILE" 2>/dev/null | head -n1)
   [[ $GFX == @(hd|ascii) ]] || { GFX=hd GFX_NEW=1; }
@@ -7015,7 +7147,7 @@ toggle_gfx() {
   else logm "Graphics: classic ASCII. [v] switches to HD emoji graphics." "$K_GOOD"; fi
 }
 
-save_gfx() { mkdir -p "$DATA_DIR" 2>/dev/null; printf 'GFX=%s\n' "$GFX" > "$GFX_FILE" 2>/dev/null; }
+save_gfx() { mkdir -p "${GFX_FILE%/*}" 2>/dev/null; printf 'GFX=%s\n' "$GFX" > "$GFX_FILE" 2>/dev/null; }
 
 # --- juice: floating numbers, hit flashes, nicer bars -------------------------------
 ft_add() {  # x y text style
@@ -9074,17 +9206,16 @@ client_main() {
   mkdir -p "$DATA_DIR" || die "cannot create $DATA_DIR"
   load_world
   if [[ $MODE == host ]]; then
-    pick_hub_tool || die "hosting needs ncat, python3 or socat (joining works with plain bash)"
-    echo "Starting the world on port $NET_PORT (hub: $HUB_TOOL)..."
+    pick_hub_tool || die "hosting needs python3 (joining works with plain bash)"
+    echo "Starting the world on port $NET_PORT..."
     start_hub || { stop_all; die "could not open port $NET_PORT - already in use? Try --port"; }
     : > "$DATA_DIR/server.log" 2>/dev/null
     start_world_server
   fi
-  echo "Connecting to $NET_HOST:$NET_PORT..."
   until net_connect; do
     tries=$(( tries + 1 ))
-    if (( tries > 10 )) || [[ $MODE == join ]]; then
-      stop_all; die "could not connect to $NET_HOST:$NET_PORT - is the world running? Firewall?"
+    if (( tries > 10 )); then
+      stop_all; die "could not reach the world (hub on port $HUB_PORT) - is it running?"
     fi
     sleep 0.3
   done
@@ -9103,7 +9234,8 @@ client_main() {
   set_gfx
   printf '\e[?1049h\e[?25l\e[?7l'
   trap cleanup EXIT
-  trap 'exit 0' INT TERM HUP
+  trap 'exit 0' INT TERM HUP QUIT
+  [[ $MODE == session ]] && trap '' TSTP TTIN TTOU         # v7.0: a player's game on the server must never stop
   trap 'RESIZED=1' WINCH
   if load_char; then
     logm "Welcome back, $MY_NAME the ${C_NAME[CLS]}!" "$K_ANN"
@@ -9125,7 +9257,7 @@ client_main() {
   send HELLO "$MY_ID" "$MY_NAME" "$CLS" "$LVL"; send_pos
   if [[ $MODE == host ]]; then
     lan_ip
-    logm "Your world is online. Friends join with: ./shellmmorpg.sh --join $LANIP:$NET_PORT" "$K_PARTY"
+    logm "Your world is online. Friends with an ssh login here: ssh -t user@$LANIP $SELF --join $NET_PORT" "$K_PARTY"
   fi
   next_save=$(( NOW + 30000 ))
   layout
@@ -9162,13 +9294,13 @@ client_main() {
 
 dedicated_main() {
   trap '' PIPE
-  pick_hub_tool || die "the server needs ncat, python3 or socat"
-  echo "shellmmorpg dedicated server - starting hub ($HUB_TOOL) on port $NET_PORT..."
+  pick_hub_tool || die "the server needs python3"
+  echo "shellmmorpg dedicated server - port $NET_PORT (the hub: 127.0.0.1:$HUB_PORT)..."
   start_hub || { stop_all; die "could not open port $NET_PORT"; }
-  trap 'kill_tree "$HUB_PID"; [[ -n $HUB_DIR ]] && rm -rf "$HUB_DIR"' EXIT
+  trap 'kill_tree "$HUB_PID"' EXIT
   lan_ip
-  if [[ -n $NET_BIND ]]; then echo "Listening on $NET_BIND only. Players: ssh -t user@host shellmmorpg-play   (docs/SERVER.md)"
-  else echo "Players join with: ./shellmmorpg.sh --join $LANIP:$NET_PORT   (Ctrl+C stops the server)"; fi
+  echo "Listening on 127.0.0.1:$NET_PORT only. Players come in over ssh: ssh -t user@$LANIP shellmmorpg-play"
+  echo "  (or: ssh -t user@$LANIP $SELF --join $NET_PORT - see docs/SERVER.md; Ctrl+C stops the server)"
   server_main
 }
 
@@ -11726,7 +11858,7 @@ acct_login() {  # talks to the world server: loads the hero into CHAR_TEXT ("" =
   CHAR_TEXT="" ar_buf=""
   while :; do
     if [[ -z $ACC_PASS ]]; then
-      if [[ -n $SHELLMMO_PASS ]]; then ACC_PASS=$SHELLMMO_PASS
+      if [[ -n $SHELLMMO_PASS && $MODE != session ]]; then ACC_PASS=$SHELLMMO_PASS
       else acct_ask "Password for $MY_NAME: "; ACC_PASS=$ACC_IN; fi
     fi
     if ! acct_pass_ok "$ACC_PASS"; then
@@ -11747,7 +11879,7 @@ acct_login() {  # talks to the world server: loads the hero into CHAR_TEXT ("" =
           acct_ask "Repeat the password: "
           if [[ $ACC_IN != "$ACC_PASS" ]]; then echo "The passwords differ." >&2; ACC_PASS=""; continue; fi
         fi
-        if [[ -r $CHAR_FILE ]]; then                  # a hero saved on this computer before 6.2: move it to the server
+        if [[ $MODE == host && -r $CHAR_FILE ]]; then  # a hero saved on this computer before 6.2: move it to the server (v7.0: only the host's own)
           CHAR_TEXT=$(<"$CHAR_FILE"); MIGRATE_FILE=$CHAR_FILE
           echo "Found your old local hero - it moves to the server." >&2
         fi

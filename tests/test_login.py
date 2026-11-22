@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""v6.2: real clients in a pty against a real server: create a hero, quit, come back, wrong password,
-nothing is written on the player's computer, old local heroes move to the server."""
+"""v6.2/v7.0: real players in a pty, joining a real server: the game runs on the server, the player's
+terminal only sends keys. Create a hero (typing the password into the game on the server), quit, come back,
+a takeover, wrong passwords, nothing on the player's computer, resizing the window."""
 import fcntl, os, pty, random, re, select, shutil, signal, socket, struct, subprocess, sys, tempfile, termios, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -15,10 +16,11 @@ def check(desc, cond, extra=''):
 
 
 class Client:
-    def __init__(self, port, name, home, pw, extra_env=None):
-        self.m, s = pty.openpty()
+    def __init__(self, port, name, home, extra_env=None):
+        self.m, self.s = pty.openpty(); s = self.s
         fcntl.ioctl(s, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 120, 0, 0))
-        env = dict(os.environ, SHELLMMO_DIR=home, TERM='xterm-256color', SHELLMMO_PASS=pw, **(extra_env or {}))
+        env = dict(os.environ, SHELLMMO_DIR=home, TERM='xterm-256color', **(extra_env or {}))
+        env.pop('SHELLMMO_PASS', None)
         self.err = open(os.path.join(home, f'{name}.stderr'), 'w+')
         self.p = subprocess.Popen(['bash', GAME, '--join', f'127.0.0.1:{port}', '--name', name], stdin=s, stdout=s,
                                   stderr=self.err, env=env, start_new_session=True)
@@ -35,6 +37,20 @@ class Client:
         return re.sub(rb'\x1b\[[0-9;?]*[a-zA-Z]', b'', self.buf).decode('utf8', 'replace')
 
     def key(self, k): os.write(self.m, k.encode())
+
+    def wait(self, text, secs=8):
+        end = time.time() + secs
+        while time.time() < end and text not in self.text():
+            self.pump(0.2)
+        return text in self.text()
+
+    def login(self, pw, new=False):
+        ok = self.wait('Password for')
+        self.key(pw + '\r')
+        if new:
+            ok = self.wait('Repeat the password') and ok
+            self.key(pw + '\r')
+        return ok
 
     def stop(self):
         try: os.killpg(self.p.pid, signal.SIGTERM)
@@ -60,37 +76,55 @@ def main():
             try: socket.create_connection(('127.0.0.1', port), timeout=1).close(); break
             except OSError: pass
         time.sleep(1.5)
-        # a new hero: Cleric (4), default symbol and color
-        c = Client(port, 'tess', f'{base}/home1', 'secret1')
-        c.pump(3); c.key('4'); c.pump(0.7); c.key('\r'); c.pump(0.7); c.key('\r'); c.pump(2.5)
+        # a new hero: the password is asked by the game on the server; Cleric (4), default symbol and color
+        open(f'{base}/home1/tess.char', 'w').write('version=2\nCLS=1\nLVL=40\nGOLD=99999999\n')   # (a 6.x hero file: ignored now)
+        c = Client(port, 'tess', f'{base}/home1')
+        check('the game on the server asks for the password', c.login('secret1', new=True))
+        c.pump(1); c.key('4'); c.pump(0.7); c.key('\r'); c.pump(0.7); c.key('\r'); c.pump(2.5)
         check('a new hero enters the world', 'online' in c.text())
+        check('...a new one, not the file on the player\'s computer', 'Cleric' in c.text())
         for _ in range(8): c.key('d'); c.pump(0.15)
-        c.stop()
+        fcntl.ioctl(c.s, termios.TIOCSWINSZ, struct.pack('HHHH', 32, 104, 0, 0)); os.killpg(c.p.pid, signal.SIGWINCH)
+        c.buf = b''; c.pump(2.5)
+        rows = [int(r) for r in re.findall(rb'\x1b\[(\d+);\d+H', c.buf)]
+        check('a smaller window: the game on the server redraws at the new size', len(c.buf) > 3000 and rows and max(rows) <= 32, str(max(rows or [0])))
+        c.key('\r'); c.pump(0.5); c.key('Q'); c.pump(6)
+        check('Q quits the game on the server, the terminal closes', c.p.poll() is not None)
         check('the hero is saved on the server', os.path.isfile(f'{base}/srv/chars/tess.char'))
-        check('nothing is saved on the player\'s computer', not [f for f in os.listdir(f'{base}/home1') if f.endswith('.char')], str(os.listdir(f'{base}/home1')))
-        check('no bash errors in the client', not c.errors(), str(c.errors()[:2]))
+        check('nothing is written on the player\'s computer', sorted(os.listdir(f'{base}/home1')) == ['tess.char', 'tess.stderr'], str(os.listdir(f'{base}/home1')))
+        check('no bash errors on the screen', not re.search(r'line \d+:|syntax error|unbound', c.text()))
         # coming back (from another computer)
-        c2 = Client(port, 'tess', f'{base}/home2', 'secret1')
-        c2.pump(5)
+        c2 = Client(port, 'tess', f'{base}/home2')
+        c2.login('secret1'); c2.pump(4)
         check('the hero is loaded: welcome back', 'Welcome back' in c2.text())
         check('...as a Cleric', 'Cleric' in c2.text())
         # v6.3: logging in from a third computer takes the hero over, the second session ends without saving
-        c2b = Client(port, 'tess', f'{base}/home3', 'secret1')
-        c2b.pump(5); c2.pump(2)
+        c2b = Client(port, 'tess', f'{base}/home3')
+        c2b.login('secret1'); c2b.pump(4); c2.pump(3)
         check('a new login takes the hero over', 'Welcome back' in c2b.text())
         check('...the old session ends', c2.p.poll() is not None and 'somewhere else' in c2.text(), c2.text()[-200:])
         c2b.stop()
-        # wrong password
-        c3 = Client(port, 'tess', f'{base}/home3', 'wrongpw')
-        c3.pump(3); c3.stop()
-        c3.err.seek(0); e3 = c3.err.read()
-        check('a wrong password is refused', 'refused' in e3 and c3.p.returncode not in (None, 0), e3[-200:])
-        # an old local hero moves to the server
-        shutil.copy(f'{base}/srv/chars/tess.char', f'{base}/home3/oldie.char')
-        c4 = Client(port, 'oldie', f'{base}/home3', 'secret1')
-        c4.pump(5); c4.stop()
-        check('an old local hero moves to the server', os.path.isfile(f'{base}/srv/chars/oldie.char') and not os.path.exists(f'{base}/home3/oldie.char')
-              and os.path.exists(f'{base}/home3/oldie.char.moved-to-server'))
+        # wrong password, three times
+        c3 = Client(port, 'tess', f'{base}/home3')
+        for pw in ('wrongpw1', 'wrongpw2', 'wrongpw3'):
+            c3.login(pw); c3.buf = c3.buf.replace(b'Password for', b'(asked)'); c3.pump(1.2)
+        c3.pump(3)
+        check('wrong passwords are refused, the session ends', 'refused' in c3.text() and c3.p.poll() is not None, c3.text()[-200:])
+        # an old hero file on the server's own disk is not handed to whoever logs in with that name
+        shutil.copy(f'{base}/srv/chars/tess.char', f'{base}/srv/oldie.char')
+        c4 = Client(port, 'oldie', f'{base}/home3')
+        c4.login('secret1', new=True); c4.pump(2)
+        check('a stranger does not get the host\'s old local hero', 'Choose your class' in c4.text() and not os.path.exists(f'{base}/srv/oldie.char.moved-to-server'))
+        c4.stop()
+        # only over ssh: --join to another machine is refused with a hint, --bind is gone
+        r = subprocess.run(['bash', GAME, '--join', '192.168.1.20:4747'], capture_output=True, text=True, timeout=10)
+        check('--join to another machine: use ssh', r.returncode != 0 and '--ssh user@192.168.1.20' in r.stderr, r.stderr)
+        r = subprocess.run(['bash', GAME, '--server', '4747', '--bind', '0.0.0.0'], capture_output=True, text=True, timeout=10)
+        check('--bind is gone', r.returncode != 0 and 'ssh' in r.stderr, r.stderr)
+        # not a terminal client: the gate says so
+        g = socket.create_connection(('127.0.0.1', port), timeout=3); g.sendall(b'SM1|HELLO|abcdef|x|0|1\n')
+        time.sleep(0.5); check('an old 6.x client is told to update', g.recv(4096).startswith(b'SMT1|NO|'))
+        g.close()
     finally:
         os.killpg(srv.pid, signal.SIGTERM)
         shutil.rmtree(base, ignore_errors=True)
@@ -98,4 +132,5 @@ def main():
     sys.exit(1 if FAIL else 0)
 
 
-main()
+if __name__ == '__main__':
+    main()

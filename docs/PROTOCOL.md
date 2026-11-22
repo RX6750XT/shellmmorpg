@@ -1,5 +1,10 @@
 # Network protocol
 
+Since 7.0 this protocol never leaves the server: the hub listens on
+127.0.0.1, and only processes the server started can use it (the world
+server and one game session per player). Players are connected through the
+**gate** with a terminal - see [the gate](#the-gate-v70) below.
+
 Everything travels as text lines through the hub, which sends each line to
 every connection. There is no other channel.
 
@@ -100,10 +105,9 @@ All sent with `from` = `srv`; clients act on the ones for their map or id.
 ## Heroes on the server (v6.2)
 
 Heroes are stored by the world server. These lines are **private**: the
-python3 and socat hubs deliver `ALOAD`/`ASAVE` only to the world server and
-`AR<id>` only to the player `<id>` (the id is part of the type, 6 hex digits,
-sent by the server). The ncat hub relays blindly - everybody sees them
-there. Before the login the server ignores everything but `ALOAD` and `BYE`;
+hub delivers `ALOAD`/`ASAVE` only to the world server and `AR<id>` only to
+the player `<id>` (the id is part of the type, 6 hex digits, sent by the
+server). Before the login the server ignores everything but `ALOAD` and `BYE`;
 afterwards `HELLO` and `POS` must carry the hero's name.
 
 | Type | Fields | Meaning |
@@ -122,8 +126,7 @@ afterwards `HELLO` and `POS` must carry the hero's name.
 
 The world server decides who is an admin (`$SHELLMMO_DIR/admins`, read for
 every command, plus the host's hero via `SHELLMMO_ADMIN_NAME`). `ADM` is
-private like `ALOAD`: the python3 and socat hubs deliver it to the world
-server only. Admin commands only work with logins on.
+private like `ALOAD`: the hub delivers it to the world server only. Admin commands only work with logins on.
 
 | Type | Fields | Meaning |
 | --- | --- | --- |
@@ -138,7 +141,7 @@ Commands (`/admin help`): `who` `admins` `grant` `revoke` `ann` `kick`
 names, item codes, map bounds, a free tile to stand on) and logs
 `admin NAME: command args`. Creatures spawned by an admin do not respawn.
 
-## Interest management (v6.3, python3 hub)
+## Interest management (v6.3)
 
 In the open world (`W`) the hub forwards `MON` `MMOV` `MHP` `MATK` only to
 players within 50 tiles of the monster (and keeps them until 58 tiles,
@@ -147,8 +150,7 @@ and position: when a monster walks into range, or a player walks (or
 teleports) up to it, the player gets one full `MON` line from the hub.
 `MDIE` goes to everybody who ever got that monster; `MATK` always reaches
 its target. Lines about instances (`D`, `H`) and everything else go to
-everybody, as before. The world server itself still gets everything. The
-socat and ncat hubs relay everything - clients work the same with both.
+everybody, as before. The world server itself still gets everything.
 
 Traffic per player stays flat as players join (about 30 lines a second
 while walking, before: 30 with one player, 120 with eight), and a join no
@@ -162,11 +164,30 @@ restarts it (and the hub); everybody logs in again by themselves (`AUTH`).
 A dedicated server restarts its hub if it dies; a hub exits when the game
 that started it is gone.
 
-## World server ↔ hub
+## Joining the hub
 
 | Type | Fields | Meaning |
 | --- | --- | --- |
-| `AUTH` | token | the world server proves it may speak as `srv` (never relayed) |
+| `AUTH` | token | the first line of every connection (never relayed): `SM1\|AUTH\|srv\|<SHELLMMO_HUB_TOKEN>` - the world server; `SM1\|AUTH\|<id>\|<SHELLMMO_SESS_TOKEN>` (v7.0) - a game session the gate (or the host) started, as player `<id>`. A connection without a valid `AUTH` hears nothing and is not heard |
+
+## The gate (v7.0)
+
+127.0.0.1:PORT - players come in over ssh, and their ssh login runs the
+terminal (`--join`) that connects here and sends one line:
+
+```
+SMT1|name|cols|rows|gfx            name 1-12 of A-Z a-z 0-9 _ -, cols/rows 1-3 digits, gfx hd|ascii|-
+```
+
+The gate answers `SMT1|OK` and from then on relays raw bytes: keys to a
+pseudo-terminal running `shellmmorpg.sh --session` for that player, the
+screen back. `ESC ] 5379 ; rows ; cols BEL` from the player resizes that
+terminal. Anything else gets `SMT1|NO|reason` and the connection is closed
+(an old 6.x client is told to update). At most `SHELLMMO_MAX_PLAYERS`
+(default 32) sessions at a time. The session gets a clean environment (the
+server's data directory, the hub's port and the session token - never the
+world server's token), asks for the hero's password itself and ends with
+`SIGHUP` (it saves) when the player disconnects.
 
 ## Codes
 
@@ -193,25 +214,32 @@ million, heals 2000, buffs 16 s, damage by level).
 
 ## Trust model
 
-Heroes are accounts (name + password, stored as a salted hash on the
-server). Since 6.2 the hero is stored on the server, but **clients are still
-trusted with their own character**: a modified client can save any level,
-gear or gold into its own hero. This is a game for friends. The password
-travels as plain text: use ssh (see SERVER.md) outside a trusted network.
+**Since 7.0 the server decides everything.** The game itself runs on the
+server; a player's computer is a terminal that sends keys. A modified
+`--join` can only send other keys - it cannot touch a hero, the protocol or
+the world. Heroes are accounts (name + password, stored as a salted hash on
+the server). The game protocol below never leaves the server.
 
-What the server and hub do guarantee (python3 and socat hubs):
+What the server guarantees:
+
+- players reach the machine only over ssh, and then only the gate (both
+  gate and hub listen on 127.0.0.1); the hub only
+  hears processes that know a random token the server made at start (the
+  world server, and the game sessions the gate started);
 
 - only the world server can send as `srv` - nobody can fake monsters, loot,
   announcements, dungeon starts or admin effects;
 - admin commands are checked by the world server against its own list
   (v6.4);
-- every connection is bound to the first sender id it uses - nobody can chat,
-  trade, heal or quit in someone else's name;
+- every connection is bound to the id it proved with `AUTH` - nobody can
+  chat, trade, heal or quit in someone else's name;
 - input is validated before use; garbage, oversized lines and injection
   attempts are dropped (`tests/test_net.py` checks this);
 - requests that create work for the server are limited (dungeon instances:
   one request per 1.5 s per player, 40 at a time; full resyncs: one per map
-  per second; slow clients are cut off at 1 MiB of unread output).
+  per second; slow clients are cut off at 1 MiB of unread output, a
+  terminal that does not read at 4 MiB).
 
-The ncat hub (`ncat --broker`) relays blindly - it is only picked when
-neither python3 nor socat is installed.
+Keys, the screen and the password typed at login travel inside the
+player's ssh connection; between the terminal and the gate they never leave
+the machine.

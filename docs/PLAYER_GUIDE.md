@@ -7,9 +7,8 @@ story ends. The in-game help (**?**) has the short version.
 ## Getting started
 
 ```bash
-./shellmmorpg.sh                 # host a world (friends can join you)
-./shellmmorpg.sh --join HOST     # join someone else's world
-./shellmmorpg.sh --ssh me@HOST   # play on a server you have an ssh login for
+./shellmmorpg.sh                 # host a world (friends come in over ssh)
+./shellmmorpg.sh --ssh me@HOST   # play on a server: always over ssh
 ./shellmmorpg.sh --name Lyra     # play another character (default: your user name)
 ```
 
@@ -19,13 +18,15 @@ The quest board (**!** / 📜 on the plaza) hands out your first jobs.
 
 Your hero lives **on the server** (since 6.2), not on your computer. The
 first time you join a world you choose a password for the name; afterwards
-the game asks for it at login (or set `SHELLMMO_PASS`). The server keeps your
-hero safe: it is saved every 30 seconds, whenever something important
-happens and when you quit (**Q**). Another world is another hero. Only one
-session per hero at a time. Five wrong passwords lock the name for a minute.
-A hero saved by an older version on your computer
-(`~/.shellmmorpg/<name>.char`) moves to the server the first time you log in
-with that name; the old file is renamed to `.moved-to-server`.
+the game asks for it at login (`SHELLMMO_PASS` works only for the host's own
+game). The server keeps your hero safe: it is saved every 30 seconds,
+whenever something important happens and when you quit (**Q**) - or when
+your connection drops. Another world is another hero. Only one session per
+hero at a time. Five wrong passwords lock the name for a minute.
+
+Since 7.0 your game runs **on the server** and you reach it **only over
+ssh**: ssh shows it in your terminal and sends your keys. On a slow connection you feel the round trip
+when you walk; on a LAN you do not. Resizing your window works as usual.
 
 ## Controls
 

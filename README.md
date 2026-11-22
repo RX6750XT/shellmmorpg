@@ -17,10 +17,9 @@ level up to 40 - and rent a room at the inn to show off your trophies.
 ## Quick start
 
 ```bash
-./shellmmorpg.sh                      # start a world and play - friends can join
-./shellmmorpg.sh --join 192.168.1.20  # join a friend's world (port 4747)
-./shellmmorpg.sh --server 4747        # dedicated server, no player
-./shellmmorpg.sh --ssh me@host        # play on a server over ssh (docs/SERVER.md)
+./shellmmorpg.sh                      # start a world and play - friends come in over ssh
+./shellmmorpg.sh --ssh me@host        # play on a server (players always come in over ssh)
+./shellmmorpg.sh --server 4747        # dedicated server, no player (docs/SERVER.md)
 ./shellmmorpg.sh --ascii              # classic ASCII graphics ([v] toggles in game)
 ```
 
@@ -28,11 +27,13 @@ Press **?** in the game for all controls. New here? Read the
 [player guide](docs/PLAYER_GUIDE.md).
 
 **Needs:** bash 4.3+ (5.x recommended), a 256-color UTF-8 terminal of at
-least 100×30. Hosting a world also needs one of `python3`, `socat` or `ncat`
-for the network hub (joining needs nothing but bash). Since 6.2 **heroes
-live on the server**, protected by a password you choose when you create
-one: the world's host keeps them in `~/.shellmmorpg/chars/` (`SHELLMMO_DIR`
-moves that), nothing is stored on a joining player's computer.
+least 100×30. Hosting a world also needs `python3` (and sshd, for
+friends); playing on someone else's world needs `ssh`. Since 7.0 **the game
+runs on the server**: over ssh you see your game, which runs on the host -
+your computer only sends keys. Heroes live on the server, protected by a password you choose when you
+create one: the world's host keeps them in `~/.shellmmorpg/chars/`
+(`SHELLMMO_DIR` moves that), nothing is stored on a joining player's
+computer.
 
 ## What's in it
 
@@ -93,10 +94,14 @@ tests/run.sh quick         # without the network tests
 SHELLMMO_DEBUG=1 ./shellmmorpg.sh   # frame time in the top right corner
 ```
 
-## Playing over the internet
+## Playing together: only over ssh
 
-The host's port (default 4747/tcp) must be reachable. There is no account
-system: the game trusts each player's own character file. The python3 and
-socat hubs stop players from impersonating the server or each other; the
-ncat hub cannot. For a public server prefer `SHELLMMO_HUB=python3` - see
-[PROTOCOL.md](docs/PROTOCOL.md#trust-model).
+Since 7.0 the server decides everything and **players reach a world only
+over ssh**. Every player's game runs on the server; the game listens on
+127.0.0.1 and nothing but sshd is exposed (ssh encrypts keys, screen and
+password). The internal protocol never leaves the machine - see
+[PROTOCOL.md](docs/PROTOCOL.md#trust-model). A server: `deploy/install.sh`
+and [SERVER.md](docs/SERVER.md). Hosting with `./shellmmorpg.sh`: friends
+need an ssh login on your machine and run
+`ssh -t user@your-host /path/to/shellmmorpg.sh --join 4747` (the game shows
+the exact line).

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""v6.3: the world server dies under a host and a friend (real clients in a pty): the host restarts it,
-both log in again by themselves, nothing is lost, no bash errors and no "Killed" notices on screen."""
+"""v6.3/v7.0: the world server dies under a host and a friend (real clients in a pty; the friend's game runs on
+the host, behind the gate): the host restarts it, both log in again by themselves, nothing is lost, no bash
+errors and no "Killed" notices on screen."""
 import fcntl, os, pty, random, re, select, shutil, signal, struct, subprocess, sys, tempfile, termios, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -16,7 +17,7 @@ port = random.randint(20000, 40000)
 def client(args, home, name):
     m, s = pty.openpty(); fcntl.ioctl(s, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 120, 0, 0))
     os.makedirs(f'{base}/{home}', exist_ok=True)
-    env = dict(os.environ, SHELLMMO_DIR=f'{base}/{home}', SHELLMMO_PASS='abcd1234', TERM='xterm-256color', SHELLMMO_HUB='python3')
+    env = dict(os.environ, SHELLMMO_DIR=f'{base}/{home}', SHELLMMO_PASS='abcd1234', TERM='xterm-256color')
     env.pop('SHELLMMO_OPEN', None)
     p = subprocess.Popen(['bash', GAME] + args + ['--name', name], stdin=s, stdout=s, stderr=open(f'{base}/{name}.err', 'w'),
                          env=env, start_new_session=True)
@@ -29,13 +30,18 @@ def pump(t):
             if select.select([c[1]], [], [], 0.02)[0]:
                 try: c[2] += os.read(c[1], 65536)
                 except OSError: pass
-def create(c):
+def create(c, typed=False):
+    if typed:                                    # a friend types the password into the game on the host
+        for p in ('Password for', 'Repeat the password'):
+            end = time.time() + 8
+            while time.time() < end and p.encode() not in c[2]: pump(0.2)
+            os.write(c[1], b'abcd1234\r'); pump(0.5)
     for k in ('4', '\r', '\r'): os.write(c[1], k.encode()); pump(0.6)
     pump(2)
 txt = lambda c: re.sub(rb'\x1b\[[0-9;?]*[a-zA-Z]', b'', c[2]).decode('utf8', 'replace')
 try:
     cl.append(client(['--port', str(port)], 'host', 'hosty')); pump(5); create(cl[0])
-    cl.append(client(['--join', f'127.0.0.1:{port}'], 'friend', 'buddy')); pump(4); create(cl[1]); pump(3)
+    cl.append(client(['--join', f'127.0.0.1:{port}'], 'friend', 'buddy')); pump(2); create(cl[1], typed=True); pump(3)
     check('two players online', '2 online' in txt(cl[1]))
     ws = subprocess.run(['pgrep', '-f', f'world-server {port}'], capture_output=True, text=True).stdout.split()
     check('the world server runs', len(ws) == 1, str(ws))
@@ -53,8 +59,10 @@ try:
     for c in cl: os.killpg(c[0].pid, signal.SIGTERM)
     time.sleep(3)
     check('both heroes are saved on the host', sorted(f for f in os.listdir(f'{base}/host/chars') if f.endswith('.char')) == ['buddy.char', 'hosty.char'])
+    check('nothing on the friend\'s computer', not os.listdir(f'{base}/friend'), str(os.listdir(f'{base}/friend')))
     for c in cl:
-        errs = [l for l in open(f'{base}/{c[3]}.err').read().splitlines() if re.search(r'line \d+:|syntax error|unbound', l)]
+        errs = [l for l in open(f'{base}/{c[3]}.err', errors='replace').read().splitlines() + txt(c).splitlines()
+                if re.search(r'line \d+:|syntax error|unbound', l)]
         check(f'no bash errors ({c[3]})', not errs, str(errs[:2]))
 finally:
     for c in cl:

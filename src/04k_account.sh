@@ -36,7 +36,7 @@ acct_login() {  # talks to the world server: loads the hero into CHAR_TEXT ("" =
   CHAR_TEXT="" ar_buf=""
   while :; do
     if [[ -z $ACC_PASS ]]; then
-      if [[ -n $SHELLMMO_PASS ]]; then ACC_PASS=$SHELLMMO_PASS
+      if [[ -n $SHELLMMO_PASS && $MODE != session ]]; then ACC_PASS=$SHELLMMO_PASS
       else acct_ask "Password for $MY_NAME: "; ACC_PASS=$ACC_IN; fi
     fi
     if ! acct_pass_ok "$ACC_PASS"; then
@@ -57,7 +57,7 @@ acct_login() {  # talks to the world server: loads the hero into CHAR_TEXT ("" =
           acct_ask "Repeat the password: "
           if [[ $ACC_IN != "$ACC_PASS" ]]; then echo "The passwords differ." >&2; ACC_PASS=""; continue; fi
         fi
-        if [[ -r $CHAR_FILE ]]; then                  # a hero saved on this computer before 6.2: move it to the server
+        if [[ $MODE == host && -r $CHAR_FILE ]]; then  # a hero saved on this computer before 6.2: move it to the server (v7.0: only the host's own)
           CHAR_TEXT=$(<"$CHAR_FILE"); MIGRATE_FILE=$CHAR_FILE
           echo "Found your old local hero - it moves to the server." >&2
         fi

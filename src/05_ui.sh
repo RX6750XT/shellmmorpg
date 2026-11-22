@@ -1125,17 +1125,16 @@ client_main() {
   mkdir -p "$DATA_DIR" || die "cannot create $DATA_DIR"
   load_world
   if [[ $MODE == host ]]; then
-    pick_hub_tool || die "hosting needs ncat, python3 or socat (joining works with plain bash)"
-    echo "Starting the world on port $NET_PORT (hub: $HUB_TOOL)..."
+    pick_hub_tool || die "hosting needs python3 (joining works with plain bash)"
+    echo "Starting the world on port $NET_PORT..."
     start_hub || { stop_all; die "could not open port $NET_PORT - already in use? Try --port"; }
     : > "$DATA_DIR/server.log" 2>/dev/null
     start_world_server
   fi
-  echo "Connecting to $NET_HOST:$NET_PORT..."
   until net_connect; do
     tries=$(( tries + 1 ))
-    if (( tries > 10 )) || [[ $MODE == join ]]; then
-      stop_all; die "could not connect to $NET_HOST:$NET_PORT - is the world running? Firewall?"
+    if (( tries > 10 )); then
+      stop_all; die "could not reach the world (hub on port $HUB_PORT) - is it running?"
     fi
     sleep 0.3
   done
@@ -1154,7 +1153,8 @@ client_main() {
   set_gfx
   printf '\e[?1049h\e[?25l\e[?7l'
   trap cleanup EXIT
-  trap 'exit 0' INT TERM HUP
+  trap 'exit 0' INT TERM HUP QUIT
+  [[ $MODE == session ]] && trap '' TSTP TTIN TTOU         # v7.0: a player's game on the server must never stop
   trap 'RESIZED=1' WINCH
   if load_char; then
     logm "Welcome back, $MY_NAME the ${C_NAME[CLS]}!" "$K_ANN"
@@ -1176,7 +1176,7 @@ client_main() {
   send HELLO "$MY_ID" "$MY_NAME" "$CLS" "$LVL"; send_pos
   if [[ $MODE == host ]]; then
     lan_ip
-    logm "Your world is online. Friends join with: ./shellmmorpg.sh --join $LANIP:$NET_PORT" "$K_PARTY"
+    logm "Your world is online. Friends with an ssh login here: ssh -t user@$LANIP $SELF --join $NET_PORT" "$K_PARTY"
   fi
   next_save=$(( NOW + 30000 ))
   layout
@@ -1213,12 +1213,12 @@ client_main() {
 
 dedicated_main() {
   trap '' PIPE
-  pick_hub_tool || die "the server needs ncat, python3 or socat"
-  echo "shellmmorpg dedicated server - starting hub ($HUB_TOOL) on port $NET_PORT..."
+  pick_hub_tool || die "the server needs python3"
+  echo "shellmmorpg dedicated server - port $NET_PORT (the hub: 127.0.0.1:$HUB_PORT)..."
   start_hub || { stop_all; die "could not open port $NET_PORT"; }
-  trap 'kill_tree "$HUB_PID"; [[ -n $HUB_DIR ]] && rm -rf "$HUB_DIR"' EXIT
+  trap 'kill_tree "$HUB_PID"' EXIT
   lan_ip
-  if [[ -n $NET_BIND ]]; then echo "Listening on $NET_BIND only. Players: ssh -t user@host shellmmorpg-play   (docs/SERVER.md)"
-  else echo "Players join with: ./shellmmorpg.sh --join $LANIP:$NET_PORT   (Ctrl+C stops the server)"; fi
+  echo "Listening on 127.0.0.1:$NET_PORT only. Players come in over ssh: ssh -t user@$LANIP shellmmorpg-play"
+  echo "  (or: ssh -t user@$LANIP $SELF --join $NET_PORT - see docs/SERVER.md; Ctrl+C stops the server)"
   server_main
 }

@@ -5,31 +5,54 @@ How shellmmorpg is put together, for anyone who wants to change it.
 ## Processes
 
 ```
-            ┌───────────── host machine ─────────────┐
- player ──▶ │ client (bash) ──┐                       │
-            │                 ▼                       │      ┌──────────┐
-            │            hub (python3/socat/ncat) ◀──────────│ client   │ friends
-            │                 ▲                       │      └──────────┘
-            │ world server (bash) ┘                   │
-            └─────────────────────────────────────────┘
+              ┌──────────────────────── server / host machine ────────────────────────┐
+              │                                                                        │
+ host ──────▶ │ game (bash, the host's own) ─┐                                         │
+              │                              ▼                                         │
+              │        hub (python3, 127.0.0.1:PORT+1) ◀── world server (bash)          │
+              │                              ▲                                         │
+              │        game sessions (bash, one per player, each in a pty)             │
+              │                              ▲                                         │
+              │        gate (python3, 127.0.0.1:PORT) ─┘                               │
+              │                              ▲                                         │
+              │        --join (a terminal) per player, started by sshd                 │
+              └──────────────▲─────────────────────────────────────────────────────────┘
+                             │ ssh: keys ▲  ▼ screen
+                    players: ssh -t user@host shellmmorpg-play
 ```
 
-- **Hub** - relays every line it receives to every connection. The python3
-  and socat hubs also bind each connection to one sender id and accept the
-  sender `srv` only from the world server (which proves itself with a random
-  token from the environment). ncat's broker relays blindly.
+Since 7.0 **the game runs on the server** and players reach it **only over
+ssh**: nothing listens on the network but sshd. A player's ssh login runs a
+terminal (`--join`, `term_main`) on the server: it sends keys and shows what
+the game draws. Everything a player can do to the world goes through a game
+process the server started - nothing a player sends is more than a key.
+
+- **Gate** - 127.0.0.1:PORT. Every player who connects says hello
+  (`SMT1|name|cols|rows|gfx`) and gets a pseudo-terminal with a game
+  session of their own (`--session`) on the server; bytes are relayed both
+  ways, an in-band sequence resizes the terminal. When the player goes away
+  the session gets `SIGHUP`, saves and quits.
+- **Hub** - relays every line it receives to every connection. It listens on
+  127.0.0.1 only, and a connection must prove first that the server started
+  it (`AUTH` with a random token from the environment): the world server
+  speaks as `srv`, a session as its player id. Everything else is dropped.
+  Gate and hub are one python3 process.
 - **World server** (`--world-server PORT`, started in the background by a
   host, or `--server PORT` in the foreground) - a bash process connected to
   the hub like any client. It owns monsters, NPCs, loot, parties, party
   quests, the wanted list, the clock, weather, world bosses and dungeon
   instances.
-- **Clients** - own their character: stats, inventory, quests, story, bank.
-  They render, read keys, and tell the world where they are (`POS`) and what
-  they hit (`HIT`). The server rolls loot and sends it back (`REW`).
+- **Game sessions** (the "client" code) - one bash process per player, on
+  the server. A session owns its character (stats, inventory, quests, story,
+  bank), renders, reads keys, and tells the world where it is (`POS`) and
+  what it hits (`HIT`). The world server rolls loot and sends it back
+  (`REW`).
 
-`./shellmmorpg.sh` (host) = hub + world server in the background + client.
-`--join` = client only. Every message is one text line: see
-[PROTOCOL.md](PROTOCOL.md).
+`./shellmmorpg.sh` (host) = gate + hub + world server in the background + the
+host's own game, connected straight to the hub. `--server` = the same
+without a player. `--join [PORT]` = a terminal only, for a world on the same
+machine (what ssh players run); `--ssh user@host` = ssh + that. Every message between the
+processes is one text line: see [PROTOCOL.md](PROTOCOL.md).
 
 ## Source layout
 
@@ -39,12 +62,12 @@ here-document and the start code:
 
 | Module | Contents |
 | --- | --- |
-| `01_core.sh` | header/help, arguments, socat hub handler, all base tables (classes, skills, monsters, NPCs, zones, regions, gear kinds, materials), item codes, maps, dungeon generator |
+| `01_core.sh` | header/help, arguments, the terminal of `--join` (`term_main`, v7.0), all base tables (classes, skills, monsters, NPCs, zones, regions, gear kinds, materials), item codes, maps, dungeon generator |
 | `01b_content.sh` | v2.0 content tables (new lands, creatures, NPCs, dungeons, uniques, allies, story) - data only |
 | `01d_v4data.sh` | v4.0 data: the seven new lands (creatures via `m4`, towns and townsfolk via `n4`, zones, regions, waystones), dungeons 11-17, world bosses, gear tiers 10-12 and new kinds, the Druid and the Monk, uniques, allies, factions, rare elites, act II of the story, eight questlines; `classify4` names elements for the new creatures |
 | `01e_v45data.sh` | v4.5 data: materials 40-53 and their tables (`MAT_PK`, `MAT_GRP`, `NODE_MAT`), perfect gems (`gem_kq`), paragon, mythic affixes and the clock, the raid (dungeon 18), mounts, the valor and stable NPCs, valor wares, daily and weekly templates, achievements |
 | `01c_v3data.sh` | v3.0 data: elements and `classify_monsters`, rare elites, champion affixes, status effects, gems, talents, factions, scouting spots, the 11 questlines |
-| `02_net.sh` | the hubs, starting/stopping them, `net_connect`, `send`, `net_poll` |
+| `02_net.sh` | the gate and the hub (one python3 program, `PY_HUB`), tokens, starting/stopping them, `net_connect` (with `AUTH`), `send`, `net_poll` |
 | `03_server.sh` | the world server: spawning, AI (timer wheel), combat on the server side, loot, parties, instances, world bosses, weather, clock, message handler |
 | `03b_server45.sh` | v4.5 server: mythic scaling (`inst_mon`, `myth_scale`), Bolstering, `myth_finish`; the raid boss (`raid_attack`, delayed area blows `aoe_add`/`aoe_tick`), `raid_finish`; invasions (`inv_*`); `srv_loot` |
 | `03c_accounts.sh` | v6.2 server side of heroes: `srv_aload` (login, new heroes, password check, lock-out, one session per hero), `srv_asave` (chunks, shape check, atomic write) |
@@ -211,14 +234,15 @@ to 12 KB (ASCII).
 | File | |
 | --- | --- |
 | `chars/<name>.char`, `chars/<name>.pw` | a hero and its password hash - **on the server's computer only** (6.2) |
-| `<name>.char` | (before 6.2) a local hero; moved to the server on first login |
+| `<name>.char` | (before 6.2) a local hero; moved to the server when the host logs in with that name (7.0: only the host's own) |
+| `prefs/<name>.gfx` | (7.0) the graphics mode a player last picked |
 | `shared.chest` | (before 6.2) the chest shared by the heroes on this computer |
 | `config` | graphics mode (`GFX=hd` / `ascii`) |
 | `admins` | (v6.4) the heroes that are admins on this server, one name per line |
 | `server.log` | the world server's log when hosting |
 
 Environment knobs: `SHELLMMO_DIR`, `SHELLMMO_NAME`, `SHELLMMO_GFX`,
-`SHELLMMO_HUB` (python3/socat/ncat), `SHELLMMO_DEBUG` (frame time),
+`SHELLMMO_MAX_PLAYERS` (game sessions on a server, default 32), `SHELLMMO_DEBUG` (frame time),
 `SHELLMMO_MAX_INST` (dungeon instances, default 40), `SHELLMMO_ADMIN_NAME`
 (set by a host for its world server: that hero is an admin), `SHELLMMO_PASS` (the
 hero's password, skips the prompt), and for tests `SHELLMMO_OPEN=1` (a server

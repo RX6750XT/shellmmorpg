@@ -27,12 +27,12 @@ installed) for the warning classes that are real bugs in this code base.
 | `test_monkey.sh` | thousands of random keys in every screen (both graphics modes), random network lines, time passing; after every step the hero must make sense (valid items, no negative gold, standing on the floor ...) and nothing may print a bash error. `bash tests/test_monkey.sh STEPS SEED` |
 | `test_fuzz.sh` | a real world server flooded with valid, nearly valid and garbage lines from honest players and liars: no bash error, no code from a line ever runs. `bash tests/test_fuzz.sh LINES SEED` |
 | `test_render.sh` | every screen in ASCII and HD at 100×30, 120×40 and 200×60: no bash error, nothing past the right edge, the map frame intact; incremental frames end up exactly like full redraws |
-| `test_acct.py` | a real server with logins (once per hub): new heroes, chunked saves, loading, wrong passwords and the lock-out, one session per hero, nobody plays without a login or under another name, hero data is private (python3/socat), no password in the log |
-| `test_login.py` | real clients in a pty: create a hero, quit, come back from another computer, wrong password, nothing on the player's disk, an old local hero moves to the server |
+| `test_acct.py` | a real server with logins: new heroes, chunked saves, loading, wrong passwords and the lock-out, one session per hero, nobody plays without a login or under another name, hero data is private, no password in the log |
+| `test_login.py` | real players in a pty, joining through the gate (v7.0): the game on the server asks for the password, create a hero, a smaller window redraws, Q ends the session and the terminal, come back from another computer, a takeover, wrong passwords, nothing on the player's disk (an old hero file there is ignored), a stranger never gets the host's old local hero, old 6.x clients are told to update, `--join` to another machine and `--bind` are refused (ssh only) |
 | `test_v64.sh` | (v6.4) admin tools on the client: only the server's private lines count, every effect (god mode against blows and poison, teleport out of a dungeon, level, XP, gold, items, heal), `/admin`, the admins file |
-| `test_admin.py` | (v6.4) a real server, once per hub: nobody is an admin by default, `--admin add`/`remove` count at once, refused commands do nothing, effects reach only their hero, spawn, kill, time, weather, announcements, grant and revoke in the game, kick, nobody fakes the server, everything in the log |
-| `test_restart.py` | (v6.3) a host and a friend in a pty, the world server is killed: the host restarts it, both log in again by themselves, see each other, nothing is lost, nothing is drawn over the game |
-| `test_net.py` | a real dedicated server with protocol bots, once per hub (python3, socat, ncat): world sync, combat and loot, monster AI, anti-spoofing, garbage input, dungeons, parties, interest management (python3: only nearby monsters, walking somewhere brings its monsters, once), and no bash errors in the server log |
+| `test_admin.py` | (v6.4) a real server: nobody is an admin by default, `--admin add`/`remove` count at once, refused commands do nothing, effects reach only their hero, spawn, kill, time, weather, announcements, grant and revoke in the game, kick, nobody fakes the server, everything in the log |
+| `test_restart.py` | (v6.3) a host and a friend (through the gate, typing the password) in a pty, the world server is killed: the host restarts it, both log in again by themselves, see each other, nothing is lost, nothing is drawn over the game |
+| `test_net.py` | a real dedicated server with protocol bots (they talk to the hub with the session token, like game sessions): world sync, combat and loot, monster AI, anti-spoofing, (v7.0) nobody without the token is heard or hears anything, neither the hub nor the gate is on the network, the gate refuses protocol lines and bad names, garbage input, dungeons, parties, interest management (only nearby monsters, walking somewhere brings its monsters, once), and no bash errors in the server log |
 
 ## How the bash tests work
 
@@ -61,7 +61,7 @@ with its colors (handy to diff two renderings).
 - `./build.sh --where N` - which module and line is line N of
   `shellmmorpg.sh` (bash error messages give built line numbers).
 - `SHELLMMO_DEBUG=1 ./shellmmorpg.sh` - average frame time, top right.
-- A second terminal: `./shellmmorpg.sh --join 127.0.0.1 --name tester`.
+- A second terminal: `./shellmmorpg.sh --join 4747 --name tester` (on the same machine; others come in over ssh).
 - The world server writes `~/.shellmmorpg/server.log` when you host.
 - To try a function by hand:
   `SHELLMMO_LIB=1 bash -c 'set --; source ./shellmmorpg.sh; item_name U.3 0; echo "$INAME"'`

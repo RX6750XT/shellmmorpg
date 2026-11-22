@@ -5,7 +5,7 @@
 #  ASAVE). ASAVE sends the hero's save text in chunks of at most 1400
 #  characters, newlines written as the unit separator (\x1f).
 #  The hub delivers ALOAD/ASAVE to the world server only and AR<id> to the
-#  player <id> only (python3 and socat hubs).
+#  player <id> only.
 # ---------------------------------------------------------------------------
 ACC_DIR="$DATA_DIR/chars" ACCT_ON=0 ACC_HASHER="" ACC_CHUNK=1400 ACC_MAXCH=60 ACC_STALE=8000
 declare -A ACC_NAME=() ACC_NEW=() ACC_PASS=() ACC_BUF=() ACC_NS=() ACC_SEEN=() ACC_FAIL=() ACC_LOCK=() ACC_RATE=() ACC_SVN=() ACC_SVT=()

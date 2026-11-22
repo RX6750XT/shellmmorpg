@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """Integration test: a real dedicated server, driven by protocol bots.
 
-Starts `shellmmorpg.sh --server PORT` (python3 hub unless SHELLMMO_HUB says
-otherwise), connects bots over TCP and checks the world server end to end:
-world sync, combat + loot, dungeon instances, parties, anti-spoofing and
-robustness against garbage input.
+Starts `shellmmorpg.sh --server PORT`, connects bots to the hub (127.0.0.1,
+PORT + 1, with the session token a real game session would get from the gate)
+and checks the world server end to end: world sync, combat + loot, dungeon
+instances, parties, anti-spoofing, robustness against garbage input - and
+(v7.0) that nobody without the token gets in, and what the gate accepts.
 """
 import os, random, re, shutil, signal, socket, subprocess, sys, tempfile, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GAME = os.environ.get('GAME', os.path.join(ROOT, 'shellmmorpg.sh'))
-HUB = os.environ.get('SHELLMMO_HUB', 'python3')
+HUB = 'python3'
+TOKEN = 'test-session-token-0123456789'   # (the server takes SHELLMMO_SESS_TOKEN from its environment)
 PASS = FAIL = 0
+NAME = 'test_net'
 
 
 def check(desc, cond, extra=''):
@@ -20,16 +23,19 @@ def check(desc, cond, extra=''):
         PASS += 1
     else:
         FAIL += 1
-        print(f'  FAIL [test_net/{HUB}] {desc} {extra}')
+        print(f'  FAIL [{NAME}] {desc} {extra}')
 
 
 class Bot:
-    def __init__(self, port, pid, name):
+    def __init__(self, port, pid, name, token=TOKEN):
+        """port: the server's public port - bots talk to its hub (port + 1) like a game session"""
         self.id, self.name = pid, name
-        self.s = socket.create_connection(('127.0.0.1', port), timeout=5)
+        self.s = socket.create_connection(('127.0.0.1', port + 1), timeout=5)
         self.s.settimeout(0.1)
         self.buf = b''
         self.lines = []
+        if token:
+            self.send('AUTH', pid, token)
 
     def send(self, *fields):
         self.s.sendall(('SM1|' + '|'.join(str(f) for f in fields) + '\n').encode())
@@ -80,10 +86,18 @@ class Bot:
             pass
 
 
+def lan_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect(('10.255.255.255', 1)); ip = s.getsockname()[0]; s.close()
+        return ip
+    except OSError:
+        return '127.0.0.1'
+
+
 def main():
     port = random.randint(20000, 40000)
     data = tempfile.mkdtemp(prefix='shellmmo_net_')
-    env = dict(os.environ, SHELLMMO_DIR=data, SHELLMMO_HUB=HUB, SHELLMMO_WB_DELAY='9999999', SHELLMMO_OPEN='1')
+    env = dict(os.environ, SHELLMMO_DIR=data, SHELLMMO_SESS_TOKEN=TOKEN, SHELLMMO_WB_DELAY='9999999', SHELLMMO_OPEN='1')
     srv = subprocess.Popen(['bash', GAME, '--server', str(port)], env=env, stdout=subprocess.PIPE,
                            stderr=subprocess.STDOUT, start_new_session=True)
     try:
@@ -105,7 +119,7 @@ def main():
         errs = [l for l in out.splitlines() if re.search(r'line \d+:|syntax error|command not found|unbound', l)]
         check('server log has no bash errors', not errs, '\n    ' + '\n    '.join(errs[:5]))
         shutil.rmtree(data, ignore_errors=True)
-    print(f'{"test_net/" + HUB:<14} {PASS:4d} passed  {FAIL} failed')
+    print(f'{"test_net":<14} {PASS:4d} passed  {FAIL} failed')
     sys.exit(1 if FAIL else 0)
 
 
@@ -123,7 +137,7 @@ def run(port):
         f = l.split('|')
         if len(f) >= 10 and f[1] == 'MON' and f[3] == 'W':
             mons[int(f[4])] = (int(f[5]), int(f[6]), int(f[7]), int(f[8]))
-    if HUB == 'python3':      # v6.3: interest management - only the monsters near you
+    if True:                  # v6.3: interest management - only the monsters near you
         far = [m for m, (t, x, y, hp) in mons.items() if abs(x - 80) > 58 or abs(y - 34) > 58]
         check('dozens of monsters near you are synced', len(mons) > 30, f'(got {len(mons)})')
         check('...but none from the other end of the world', not far, f'({len(far)} far away)')
@@ -167,10 +181,37 @@ def run(port):
     a.send('CHAT', '9e1715', 'bob', 'impersonated')  # pretend to be someone else
     a.send('CHAT', '151add', 'alice', 'legit')
     b.pump(1.0)
-    if HUB in ('python3', 'socat'):
-        check('nobody can speak as the server', not any('HACKED' in l for l in b.lines))
-        check('nobody can speak as another player', not any('impersonated' in l for l in b.lines))
+    check('nobody can speak as the server', not any('HACKED' in l for l in b.lines))
+    check('nobody can speak as another player', not any('impersonated' in l for l in b.lines))
     check('normal chat gets through', any('legit' in l for l in b.lines))
+
+    # --- v7.0: only what the server started may talk to the hub -------------------------------------
+    b.lines.clear()
+    x = Bot(port, 'baddad', 'mallory', token=None)                     # no token at all
+    x.send('CHAT', x.id, 'mallory', 'no-token'); x.send('AUTH', 'srv', 'guess')
+    x.send('ANN', 'srv', 'no-token-ann'); x.pump(1.0)
+    y = Bot(port, 'baddae', 'mallory', token='wrong-token')            # a wrong token
+    y.send('CHAT', y.id, 'mallory', 'bad-token'); y.pump(0.5)
+    b.pump(1.0)
+    check('a connection without the token is not heard', not any('no-token' in l for l in b.lines))
+    check('...and hears nothing', not any(l.startswith('SM1|') for l in x.lines), str(x.lines[:2]))
+    check('a wrong token: the same', not any('bad-token' in l for l in b.lines) and not any(l.startswith('SM1|') for l in y.lines))
+    x.close(); y.close()
+    for p, what in ((port + 1, 'the hub'), (port, 'the gate')):        # nothing is on the network: players come in over ssh
+        try:
+            socket.create_connection((lan_ip(), p), timeout=1).close(); open_ = True
+        except OSError:
+            open_ = False
+        check(f'{what} listens on 127.0.0.1 only', not open_ or lan_ip() == '127.0.0.1', lan_ip())
+    g = socket.create_connection(('127.0.0.1', port), timeout=3)       # the gate: a player's terminal, nothing else
+    g.sendall(b'SM1|CHAT|151add|alice|through-the-gate\n'); time.sleep(0.5)
+    got = g.recv(4096)
+    check('the gate refuses protocol lines', got.startswith(b'SMT1|NO|'), repr(got[:60]))
+    g.close()
+    g = socket.create_connection(('127.0.0.1', port), timeout=3)
+    g.sendall(b'SMT1|$(id)|120|40|hd\n'); time.sleep(0.5)
+    check('...and bad names', g.recv(4096).startswith(b'SMT1|NO|'))
+    g.close()
 
     # --- garbage does not take the server down ---------------------------------------------
     junk = ['', 'hello', 'SM1', 'SM1|', 'SM1|||||', 'SM1|HIT|151add|W|08|5|0', 'SM1|HIT|151add|W|1+1|5|0',
@@ -211,7 +252,7 @@ def run(port):
     check('leaving dissolves a party of two', a.wait(r'^SM1\|PARTY\|srv\|p\d+\|\|$') is not None)
 
     # --- interest management (v6.3, python3 hub): walking somewhere brings its monsters -------------------
-    if HUB == 'python3':
+    if True:
         b.lines.clear(); b.pos(cls=3, x=300, y=120); b.pump(1.0)
         got = [l.split('|') for l in b.lines if l.startswith('SM1|MON|srv|W|')]
         check('walking far away brings the monsters there', len(got) > 5, f'({len(got)})')

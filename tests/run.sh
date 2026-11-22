@@ -11,12 +11,9 @@ for t in tests/test_*.sh; do
 done
 if [[ $1 != quick ]]; then
   if command -v python3 >/dev/null; then
-    for hub in python3 socat ncat; do
-      [[ $hub == python3 ]] || command -v "$hub" >/dev/null || continue
-      SHELLMMO_HUB=$hub timeout 300 python3 tests/test_net.py || fails=$(( fails + 1 ))
-      SHELLMMO_HUB=$hub timeout 300 python3 tests/test_acct.py || fails=$(( fails + 1 ))
-      SHELLMMO_HUB=$hub timeout 300 python3 tests/test_admin.py || fails=$(( fails + 1 ))
-    done
+    timeout 300 python3 tests/test_net.py || fails=$(( fails + 1 ))
+    timeout 300 python3 tests/test_acct.py || fails=$(( fails + 1 ))
+    timeout 300 python3 tests/test_admin.py || fails=$(( fails + 1 ))
     timeout 300 python3 tests/test_login.py || fails=$(( fails + 1 ))
     timeout 300 python3 tests/test_restart.py || fails=$(( fails + 1 ))
   else

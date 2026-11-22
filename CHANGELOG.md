@@ -1,5 +1,46 @@
 # Changelog
 
+## 7.0 - the server decides everything
+
+**Only over ssh**
+- Players reach a world only over ssh. The game listens on 127.0.0.1 only
+  (the gate on the port, the hub on port + 1); nothing but sshd is exposed.
+  `./shellmmorpg.sh --ssh user@host` (or `ssh -t user@host
+  shellmmorpg-play`) is the way in; it now passes `--name` along too.
+- `--join` only opens a world on the same machine (`--join 4747` - what ssh
+  logins run); `--join other-host` says to use ssh. `--bind` is gone.
+- Hosting with `./shellmmorpg.sh`: friends need an ssh login on your
+  machine; the game shows the exact command.
+
+**The game runs on the server**
+- Every player's game now runs on the server, one process per player in a
+  terminal of its own. Joining (`--join`, `--ssh`, `shellmmorpg-play`)
+  opens a terminal to it (over ssh): your computer sends keys and shows the screen,
+  nothing else. A modified client can only press other keys - levels,
+  gold, items, damage, positions, trades and gifts are all decided by game
+  code the server runs.
+- The internal protocol never leaves the server: the hub listens on
+  127.0.0.1 (the port + 1) and only hears processes that prove with
+  a random token that the server started them. Players reach only the
+  **gate** (127.0.0.1, the port), from their ssh login.
+- The game on the server asks for the password itself; resizing your
+  window works; when your connection drops your hero is saved at once.
+- Your graphics choice ([v]) is kept per player on the server.
+- Up to 32 players at a time (`SHELLMMO_MAX_PLAYERS`).
+
+**Breaking**
+- 6.x clients cannot join a 7.0 server (they are told to update), and a
+  7.0 `--join` cannot join a 6.x server.
+- Hosting needs python3; the socat and ncat hubs are gone (they could not
+  check who is talking).
+- `SHELLMMO_PASS` only works for the host's own game.
+- Hero files from before 6.2 on a joining player's computer are no longer
+  moved to the server (the host's own still are).
+- New: `--session` (started by the gate), the gate handshake
+  (`SMT1|...`), `AUTH` for every hub connection - see `docs/PROTOCOL.md`.
+- Tests: the network tests talk to the hub with the session token;
+  `test_login.py` and `test_restart.py` play through the gate.
+
 ## 6.4 - admin tools
 
 **Admins, decided by the server**

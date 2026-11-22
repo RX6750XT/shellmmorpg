@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import test_net as T
 from test_net import Bot, check
 from test_acct import login, answer, save
+T.NAME = 'test_admin'
 
 HERO = 'version=2\nCLS=0\nLVL=5'
 
@@ -91,7 +92,7 @@ def run(port, data):
     m = private(pleb, 'ADM')
     check('summon moves the other hero next to the admin', m and m[0] == 'tp' and abs(int(m[2]) - 100) <= 6, str(m))
     pleb.lines.clear(); boss.pump(0.3)
-    check('other players never see admin effects', T.HUB == 'ncat' or not any(f'|AR{boss.id}|' in l for l in pleb.lines))
+    check('other players never see admin effects', not any(f'|AR{boss.id}|' in l for l in pleb.lines))
 
     # --- world commands ---------------------------------------------------------------------------------------------
     boss.lines.clear()
@@ -124,7 +125,7 @@ def run(port, data):
     pleb.send(f'AR{pleb.id}', 'srv', 'ADM', 'gold', '999999')
     pleb.send(f'AR{pleb.id}', pleb.id, 'ADM', 'gold', '999999')
     time.sleep(0.4); pleb.lines.clear(); pleb.pump(0.5)
-    check('a player cannot send itself admin effects', T.HUB == 'ncat' or not any('999999' in l for l in pleb.lines))
+    check('a player cannot send itself admin effects', not any('999999' in l for l in pleb.lines))
 
     adm(boss, 'kick', 'pleb')
     k, rest = answer(pleb)
@@ -140,7 +141,7 @@ def run(port, data):
 def main():
     port = random.randint(20000, 40000)
     data = tempfile.mkdtemp(prefix='shellmmo_adm_')
-    env = dict(os.environ, SHELLMMO_DIR=data, SHELLMMO_HUB=T.HUB, SHELLMMO_WB_DELAY='9999999')
+    env = dict(os.environ, SHELLMMO_DIR=data, SHELLMMO_SESS_TOKEN=T.TOKEN, SHELLMMO_WB_DELAY='9999999')
     env.pop('SHELLMMO_OPEN', None)
     srv = subprocess.Popen(['bash', T.GAME, '--server', str(port)], env=env, stdout=subprocess.PIPE,
                            stderr=subprocess.STDOUT, start_new_session=True)
@@ -164,7 +165,7 @@ def main():
         check('admin commands are in the server log', 'admin Boss: gold 777' in out)
         check('no code from a command ran', not os.path.exists('/tmp/pwned_adm'))
         shutil.rmtree(data, ignore_errors=True)
-    print(f'{"test_admin/" + T.HUB:<14} {T.PASS:4d} passed  {T.FAIL} failed')
+    print(f'{"test_admin":<14} {T.PASS:4d} passed  {T.FAIL} failed')
     sys.exit(1 if T.FAIL else 0)
 
 

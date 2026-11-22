@@ -2,12 +2,11 @@
 # ============================================================================
 #  shellmmorpg - a real-time multiplayer RPG for your terminal, in pure bash
 # ============================================================================
-#  ./shellmmorpg.sh                     start a world and play (friends can join)
-#  ./shellmmorpg.sh --join HOST[:PORT]  join a friend's world
-#  ./shellmmorpg.sh --server [PORT]     dedicated server without a player
-#  ./shellmmorpg.sh --port PORT         port to host on (default 4747)
-#  ./shellmmorpg.sh --bind ADDR         listen only on this address (127.0.0.1 behind ssh)
-#  ./shellmmorpg.sh --ssh [USER@]HOST   play on a server over ssh (see deploy/ and docs/SERVER.md)
+#  ./shellmmorpg.sh                     start a world and play (friends come in over ssh)
+#  ./shellmmorpg.sh --ssh [USER@]HOST   play on a server - players always come in over ssh
+#  ./shellmmorpg.sh --server [PORT]     dedicated server without a player (see deploy/, docs/SERVER.md)
+#  ./shellmmorpg.sh --port PORT         port to host on, on 127.0.0.1 (default 4747)
+#  ./shellmmorpg.sh --join [PORT]       on the server: open the game (what ssh players run)
 #  ./shellmmorpg.sh --name NAME         character name (default: $USER)
 #  ./shellmmorpg.sh --admin add|remove|list [NAME]   who is admin on this server
 #  ./shellmmorpg.sh --ascii / --hd      classic ASCII or HD emoji graphics ([v] in game)
@@ -27,15 +26,16 @@
 #  Since 6.0: more of everything - 44 creatures, 22 rares, 4 dungeons, 4 world
 #  bosses, 8 questlines, 20 uniques, 6 materials, 54 more collectables.
 #
-#  Hosting needs python3, socat or ncat (force one: SHELLMMO_HUB=socat).
-#  Joining needs nothing but bash. Characters are saved in ~/.shellmmorpg/
+#  Since 7.0 the game runs on the server and players reach it only over ssh:
+#  your computer only sends keys. Hosting needs python3 (and sshd for
+#  friends), playing needs ssh. Heroes are saved on the server.
 #  Needs bash 4.3+, a 256-color UTF-8 terminal, at least 100x30.
 #  In game press [?] for all controls. Guides: README.md and docs/.
 #
 #  This file is built from src/*.sh and world.txt by build.sh - edit those.
 # ============================================================================
 
-VERSION="6.4"
+VERSION="7.0"
 DATA_DIR="${SHELLMMO_DIR:-$HOME/.shellmmorpg}"
 SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
 # string lengths must count characters, not bytes (emoji graphics): make sure we run in a UTF-8 locale
@@ -50,59 +50,32 @@ shopt -s extglob
 shopt -u patsub_replacement 2>/dev/null   # "&" in replacements stays literal
 set -f                                   # no globbing on word splits
 
-hub_handler() {   # socat backend: one process per client, relays via a shared log
-  local log=$1 line tp me="" r f mf="$1.me.$$"
-  # relay the log to this client - except the private lines meant for others (hero data and passwords
-  # go to the world server only, AR<id> answers to that one player); awk learns who we are from $mf
-  { tail -n0 -F "$log" 2>/dev/null | awk -F'|' -v mf="$mf" '
-      function who() { if (me == "") { getline me < mf; close(mf) } return me }
-      { t = $2
-        if (t == "ALOAD" || t == "ASAVE" || t == "ADM") { if (who() != "srv") next }
-        else if (substr(t, 1, 2) == "AR" && length(t) == 8) { if (t != "AR" who()) next }
-        print; fflush() }'; } &
-  tp=$!
-  while IFS= read -r line; do
-    (( ${#line} <= 2048 )) && [[ $line == SM1\|*\|* ]] || continue
-    r=${line#SM1|}; f=${r#*|}; f=${f%%|*}             # sender id (same rules as the python hub)
-    if [[ $r == AUTH\|srv\|* ]]; then
-      [[ -n $SHELLMMO_HUB_TOKEN && ${r#AUTH|srv|} == "$SHELLMMO_HUB_TOKEN" ]] && { me=srv; printf '%s\n' srv > "$mf"; }
-      continue
-    fi
-    [[ -z $me && $f != srv ]] && { me=$f; printf '%s\n' "$me" > "$mf"; }
-    [[ $f == "$me" ]] || continue
-    case ${r%%|*} in
-      ALOAD|ASAVE|ADM) [[ $me == srv ]] && continue ;;
-      AR??????) [[ $me == srv ]] || continue ;;
-    esac
-    printf '%s\n' "$line" >> "$log"
-  done
-  pkill -P "$tp" 2>/dev/null; kill "$tp" 2>/dev/null; rm -f "$mf"
-}
-
 die() { echo "shellmmorpg: $*" >&2; exit 1; }
 
-MODE=host NET_BIND="" NET_HOST=127.0.0.1 NET_PORT=4747 MY_NAME="${SHELLMMO_NAME:-${USER:-hero}}" GFX=${SHELLMMO_GFX:-}
+MODE=host NET_HOST=127.0.0.1 NET_PORT=4747 MY_NAME="${SHELLMMO_NAME:-${USER:-hero}}" GFX=${SHELLMMO_GFX:-}
 while (( $# )); do
   case $1 in
     -h|--help) awk 'NR > 2 && !/^#/ { exit } NR > 2 && !/====/ { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
-    --hub-handler)  hub_handler "$2"; exit 0 ;;
+    --session) MODE=session ;;                     # v7.0: a player's game, started by the gate on the server
     --world-server) MODE=world NET_PORT=$2; shift ;;
     --server) MODE=server; if [[ $2 =~ ^[0-9]+$ ]]; then NET_PORT=$2; shift; fi ;;
     --port)   [[ $2 =~ ^[0-9]+$ ]] || die "--port needs a number"; NET_PORT=$2; shift ;;
-    --join)
-      [[ -n $2 ]] || die "--join needs an address, e.g. --join 192.168.1.20:4747"
+    --join)                                        # v7.0: only on the server itself - players come in over ssh
       MODE=join
-      if [[ $2 == *:* && ${2##*:} =~ ^[0-9]+$ ]]; then NET_HOST=${2%:*} NET_PORT=${2##*:}; else NET_HOST=$2; fi
-      shift ;;
-    --bind) [[ $2 =~ ^[A-Za-z0-9.:_-]+$ ]] || die "--bind needs an address, e.g. 127.0.0.1"; NET_BIND=$2; shift ;;
-    --ssh)
+      if [[ $2 =~ ^[0-9]+$ ]]; then NET_PORT=$2; shift
+      elif [[ $2 =~ ^(127\.0\.0\.1|localhost):([0-9]+)$ ]]; then NET_PORT=${BASH_REMATCH[2]}; shift
+      elif [[ $2 == @(127.0.0.1|localhost) ]]; then shift
+      elif [[ -n $2 && $2 != -* ]]; then
+        die "the game is only reachable over ssh: ./shellmmorpg.sh --ssh user@${2%:*}   (see docs/SERVER.md)"
+      fi ;;
+    --bind) die "--bind is gone in 7.0: the game listens on 127.0.0.1 only - players come in over ssh" ;;
+    --ssh)                                         # (7.0: the only way for players to reach a world)
       [[ $2 =~ ^[A-Za-z0-9._@-]+(:[0-9]+)?$ ]] || die "--ssh needs [user@]host[:sshport], e.g. --ssh me@play.example.org"
       command -v ssh >/dev/null 2>&1 || die "--ssh needs the ssh command"
       ssh_to=${2%%:*} ssh_port=()
       [[ $2 == *:* ]] && ssh_port=(-p "${2##*:}")
-      ssh_args=(); [[ -n $GFX ]] && ssh_args+=("--$GFX")
-      exec ssh -t "${ssh_port[@]}" "$ssh_to" "${SHELLMMO_REMOTE:-shellmmorpg-play}" "${ssh_args[@]}" ;;
-    --name) [[ -n $2 ]] || die "--name needs a value"; MY_NAME=$2; shift ;;
+      MODE=ssh; shift ;;
+    --name) [[ -n $2 ]] || die "--name needs a value"; MY_NAME=$2 NAME_SET=1; shift ;;
     --admin) MODE=admin ADM_OP=$2 ADM_ARG=""; [[ -n $2 ]] && shift
              if [[ $ADM_OP == @(add|remove) ]]; then ADM_ARG=$2; [[ -n $2 ]] && shift; fi ;;
     --ascii) GFX=ascii ;;
@@ -111,10 +84,49 @@ while (( $# )); do
   esac
   shift
 done
+if [[ $MODE == ssh ]]; then                      # (after all options, so --name / --hd / --ascii may come before or after)
+  ssh_args=(); [[ -n $GFX ]] && ssh_args+=("--$GFX")
+  [[ -n $NAME_SET && $MY_NAME =~ ^[A-Za-z0-9_-]{1,12}$ ]] && ssh_args+=(--name "$MY_NAME")
+  exec ssh -t "${ssh_port[@]}" "$ssh_to" "${SHELLMMO_REMOTE:-shellmmorpg-play}" "${ssh_args[@]}"
+fi
 [[ $NET_HOST =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid host '$NET_HOST'"
 (( NET_PORT >= 1 && NET_PORT <= 65535 )) || die "invalid port '$NET_PORT'"
 MY_NAME=${MY_NAME//[^A-Za-z0-9_-]/}; MY_NAME=${MY_NAME:0:12}
 [[ -n $MY_NAME ]] || MY_NAME="hero$(( RANDOM % 1000 ))"
+HUB_PORT=${SHELLMMO_HUB_PORT:-$(( NET_PORT + 1 ))}       # v7.0: the hub listens on 127.0.0.1 only, next to the public port
+[[ $HUB_PORT =~ ^[1-9][0-9]{0,4}$ ]] && (( HUB_PORT <= 65535 )) || die "invalid SHELLMMO_HUB_PORT"
+
+# --- v7.0: joining = a terminal for the game that runs on the server -------------------------------
+term_size() { local s; s=$(stty size 2>/dev/null); TROWS=${s% *} TCOLS=${s#* }; [[ $TROWS =~ ^[0-9]{1,3}$ && $TCOLS =~ ^[0-9]{1,3}$ ]] || TROWS=40 TCOLS=120; }
+term_main() {  # connect to the gate, then only send keys and show what comes back
+  local line k buf
+  T_RSZ=0
+  [[ -t 0 && -t 1 ]] || die "--join needs a terminal"
+  { exec 3<>"/dev/tcp/127.0.0.1/$NET_PORT"; } 2>/dev/null || die "no world on port $NET_PORT on this machine - is the server running?"
+  term_size
+  printf 'SMT1|%s|%s|%s|%s\n' "$MY_NAME" "$TCOLS" "$TROWS" "${GFX:--}" >&3
+  IFS= read -r -t 10 -u 3 line || die "$NET_HOST:$NET_PORT does not answer like a shellmmorpg 7 server"
+  line=${line%$'\r'}
+  [[ $line == SMT1\|NO\|* ]] && die "${line#SMT1|NO|}"
+  [[ $line == "SMT1|OK" ]] || die "$NET_HOST:$NET_PORT is not a shellmmorpg 7 server (an older one? update both sides)"
+  T_OLD=$(stty -g)
+  stty raw -echo
+  trap 'stty "$T_OLD" 2>/dev/null; printf "\e[0m\e[?25h\e[?7h\e[?1049l"; kill "$T_CAT" 2>/dev/null' EXIT
+  trap 'T_RSZ=1' WINCH
+  trap '' INT QUIT TSTP                          # (raw mode: ctrl+c travels to the game as a key)
+  cat <&3 &
+  T_CAT=$!
+  while kill -0 "$T_CAT" 2>/dev/null; do
+    if IFS= read -rsn1 -d '' -t 0.25 k; then
+      buf=$k                                     # an arrow key is several bytes: send them together
+      while (( ${#buf} < 512 )) && IFS= read -rsn1 -d '' -t 0.002 k; do buf+=$k; done
+      [[ -n $buf ]] && { printf '%s' "$buf" >&3 2>/dev/null || break; }
+    fi
+    if (( T_RSZ )); then T_RSZ=0; term_size; printf '\e]5379;%s;%s\a' "$TROWS" "$TCOLS" >&3 2>/dev/null; fi
+  done
+  exit 0
+}
+[[ $MODE == join ]] && term_main
 if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 3) )); then
   die "needs bash 4.3 or newer (you have $BASH_VERSION)"
 fi

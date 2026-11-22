@@ -88,7 +88,7 @@ def main():
         c.buf = b''; c.pump(2.5)
         rows = [int(r) for r in re.findall(rb'\x1b\[(\d+);\d+H', c.buf)]
         check('a smaller window: the game on the server redraws at the new size', len(c.buf) > 3000 and rows and max(rows) <= 32, str(max(rows or [0])))
-        c.key('\r'); c.pump(0.5); c.key('Q'); c.pump(6)
+        c.key('\r'); c.pump(0.5); c.key('Q'); c.pump(0.5); c.key('y'); c.pump(6)
         check('Q quits the game on the server, the terminal closes', c.p.poll() is not None)
         check('the hero is saved on the server', os.path.isfile(f'{base}/srv/chars/tess.char'))
         check('nothing is written on the player\'s computer', sorted(os.listdir(f'{base}/home1')) == ['tess.char', 'tess.stderr'], str(os.listdir(f'{base}/home1')))

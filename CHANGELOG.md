@@ -1,5 +1,35 @@
 # Changelog
 
+## 7.1 - comfort
+
+**Chat**
+- The log [c] scrolls (`↑↓` `PgUp` `PgDn` `Home` `End`), keeps 400 lines
+  of chat and 400 of events instead of 60/80, shows the time of every line
+  and wraps long messages instead of cutting them. Three tabs: chat, events,
+  everything in order. Scrolled back, new lines do not move what you read.
+  `enter` in the log starts chatting.
+- The chat line edits like a shell: cursor (`←` `→` `Home` `End`), `Del`,
+  `ctrl+w` / `ctrl+u` / `ctrl+k`, `↑` `↓` bring back earlier lines, `Tab`
+  completes player names and `/commands`. Pasted text arrives in one go.
+- `/r text` answers the last whisper. `/bell` switches the beep off (and is
+  remembered with the graphics setting).
+
+**Menus**
+- Fixed: the forge has 26 recipes but only `a`-`l` worked - 14 recipes
+  (and 4 at the alchemist and the campfire) could not be made at all. Now
+  `↑` `↓` + `enter` pick any recipe; the letters still work.
+- Fixed: waystones 11-17 could not be travelled to (the numbers 1-0 ran
+  out and were shown twice). `↑` `↓` + `enter` pick any waystone.
+- Every panel taller than the window scrolls (`PgUp` `PgDn` `Home` `End`)
+  and says so - before, the rest was cut off silently (professions, the
+  quest log, crafting, the quest board, trading, the jeweler on small
+  windows).
+- `PgUp` `PgDn` `Home` `End` `Del` and ctrl+arrows are understood (they
+  used to be swallowed).
+
+**Other**
+- `Q` asks before quitting (`y` quits) - no more lost sessions to a typo.
+
 ## 7.0 - the server decides everything
 
 **Only over ssh**

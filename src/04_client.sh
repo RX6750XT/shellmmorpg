@@ -77,13 +77,17 @@ for k in "${!FXG[@]}"; do GLY[f$k]=${FXG[$k]}; done
 LSPAN=()
 for (( dy = -LRY; dy <= LRY; dy++ )); do isqrt $(( LRX * LRX * (LRY * LRY - dy * dy) / (LRY * LRY) )); LSPAN[dy+LRY]=$R; done
 
-logm() {
-  LOG_T+=("$1"); LOG_C+=("${2:-$K_SYS}")
-  if (( ${#LOG_T[@]} > 80 )); then LOG_T=("${LOG_T[@]:20}"); LOG_C=("${LOG_C[@]:20}"); fi
+logm() {  # v7.1: with the time and a sequence number (the chat log [c] shows both, in order); 400 kept
+  local tm; printf -v tm '%(%H:%M)T' -1
+  LSEQ=$(( LSEQ + 1 ))
+  LOG_T+=("$1"); LOG_C+=("${2:-$K_SYS}"); LOG_TM+=("$tm"); LOG_S+=("$LSEQ")
+  if (( ${#LOG_T[@]} > 400 )); then LOG_T=("${LOG_T[@]:100}"); LOG_C=("${LOG_C[@]:100}"); LOG_TM=("${LOG_TM[@]:100}"); LOG_S=("${LOG_S[@]:100}"); fi
 }
 chatm() {
-  CHL_T+=("$1"); CHL_C+=("${2:-$K_CHAT}")
-  if (( ${#CHL_T[@]} > 60 )); then CHL_T=("${CHL_T[@]:20}"); CHL_C=("${CHL_C[@]:20}"); fi
+  local tm; printf -v tm '%(%H:%M)T' -1
+  LSEQ=$(( LSEQ + 1 ))
+  CHL_T+=("$1"); CHL_C+=("${2:-$K_CHAT}"); CHL_TM+=("$tm"); CHL_S+=("$LSEQ")
+  if (( ${#CHL_T[@]} > 400 )); then CHL_T=("${CHL_T[@]:100}"); CHL_C=("${CHL_C[@]:100}"); CHL_TM=("${CHL_TM[@]:100}"); CHL_S=("${CHL_S[@]:100}"); fi
 }
 
 valid_sym() {  # single printable ASCII char, not the protocol separator
@@ -1281,6 +1285,10 @@ chat_submit() {
     "/w "*)  a=${t#/w }; b=${a#* }; a=${a%% *}
              [[ -n $a && $b != "$a" ]] || { logm "Usage: /w <name> <message>"; return; }
              send WHISP "$MY_ID" "$MY_NAME" "$a" "$b"; chatm "[to $a] $b" "$K_WHISP" ;;
+    "/r "*)  [[ -n $LAST_WHISP ]] || { logm "Nobody whispered to you yet. /w <name> <message>"; return; }
+             b=${t#/r }; send WHISP "$MY_ID" "$MY_NAME" "$LAST_WHISP" "$b"; chatm "[to $LAST_WHISP] $b" "$K_WHISP" ;;
+    /bell)   BELL_ON=$(( ! BELL_ON )); save_gfx
+             if (( BELL_ON )); then logm "The bell rings again for whispers, invites and your name." "$K_SYS"; else logm "The bell is off. /bell turns it on again." "$K_SYS"; fi ;;
     "/invite "*) send INV "$MY_ID" "$MY_NAME" "${t#/invite }" ;;
     /accept) send PACC "$MY_ID" ;;
     /leave)  send PLEAVE "$MY_ID"; logm "You leave your party." ;;
@@ -1319,21 +1327,12 @@ chat_submit() {
       for id in "${!OP_NAME[@]}"; do list+=", ${OP_SYM[$id]:-@} ${OP_NAME[$id]} (${C_NAME[${OP_CLS[$id]:-0}]} ${OP_LVL[$id]})"; done
       logm "Online: $list" ;;
     /admin|"/admin "*) adm_cmd "${t#/admin}" ;;
-    /help)   logm "/p party  /w name msg  /invite /accept /leave  /trade name  /give name gold|#item  /symbol c  /color c  /who  /me  /home${IS_ADMIN/#1/  /admin}" ;;
+    /help)   logm "/p party  /w name msg  /invite /accept /leave  /trade name  /give name gold|#item  /symbol c  /color c  /who  /me  /home  /r reply  /bell${IS_ADMIN/#1/  /admin}  - [tab] names  [↑] last lines" ;;
     /*)      logm "Unknown command ${t%% *} - try /help" ;;
     *)       send CHAT "$MY_ID" "$MY_NAME" "$t"; chatm "$MY_NAME: $t" "$K_CHAT"; MY_SAY=$t MY_SAYT=$(( NOW + 5000 )) MAP_DIRTY=1 ;;
   esac
 }
 
-chat_key() {
-  local k=$1 rest
-  case $k in
-    ''|$'\r') CHATTING=0; chat_submit; CHAT_BUF="" ;;
-    $'\e')    rest=""; read -rsn5 -t 0.01 rest; [[ -z $rest ]] && { CHATTING=0; CHAT_BUF=""; } ;;
-    $'\x7f'|$'\b') CHAT_BUF=${CHAT_BUF%?} ;;
-    *) if [[ $k != [[:cntrl:]] ]] && (( ${#CHAT_BUF} < 180 )); then CHAT_BUF+=$k; fi ;;
-  esac
-}
 
 # --- network messages -----------------------------------------------------------
 send_pos() {
@@ -1462,7 +1461,7 @@ cli_srv() {  # typ fields...
       else unset "OP_WANTED[$a]"; fi
       MAP_DIRTY=1 ;;
     PINV) [[ $a == "$MY_ID" ]] || return
-          logm "${b//[^A-Za-z0-9_-]/} invites you to a party - type /accept to join." "$K_PARTY"; printf '\a' ;;
+          logm "${b//[^A-Za-z0-9_-]/} invites you to a party - type /accept to join." "$K_PARTY"; bell ;;
     INFO) [[ $a == "$MY_ID" ]] || return; clean_text "$b"; logm "$CLEAN" "$K_SYS" ;;
     DSTART)
       [[ $a =~ ^D[0-9]+$ && $b =~ ^(0|[1-9][0-9]?)$ ]] && (( b < NDT )) && num "$c" || return
@@ -1543,9 +1542,9 @@ cli_line() {
     BYE)   [[ -n ${OP_NAME[$from]} ]] && logm "$nm has left the world." "$K_SYS"; op_del "$from" ;;
     CHAT)  clean_text "$b"; [[ -n $CLEAN ]] || return
            chatm "$nm: $CLEAN" "$K_CHAT"; OP_SAY[$from]=$CLEAN OP_SAYT[$from]=$(( NOW + 5000 )) MAP_DIRTY=1
-           [[ ${CLEAN,,} == *"${MY_NAME,,}"* ]] && printf '\a' ;;
+           [[ ${CLEAN,,} == *"${MY_NAME,,}"* ]] && bell ;;
     PCHAT) in_party "$from" || return; clean_text "$b"; chatm "[party] $nm: $CLEAN" "$K_PARTY" ;;
-    WHISP) [[ ${b,,} == "${MY_NAME,,}" ]] || return; clean_text "$c"; chatm "[$nm whispers] $CLEAN" "$K_WHISP"; printf '\a' ;;
+    WHISP) [[ ${b,,} == "${MY_NAME,,}" ]] || return; clean_text "$c"; chatm "[$nm whispers] $CLEAN" "$K_WHISP"; LAST_WHISP=$nm; bell ;;
     EMOTE) clean_text "$b"; chatm "* $nm $CLEAN" "$K_WHISP" ;;
     EVT)   clean_text "$b"; logm "* $nm $CLEAN" "$K_SYS" ;;
     HEAL)  [[ $b == "$MY_ID" ]] && num "$c" && (( ! DEAD )) || return

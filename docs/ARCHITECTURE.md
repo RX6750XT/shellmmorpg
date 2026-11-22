@@ -91,6 +91,7 @@ here-document and the start code:
 | `04j_v60.sh` | v6.0 client (loaded last): icons of the new materials, sprites of the hunter's trophies, achievements of 6.0, `mat_uses` from the recipes |
 | `05f_v50ui.sh` | v5.0 screens: rooms at the inn, visiting, a display, the collection book, the guestbook |
 | `05d_v3ui.sh` | v3.0 screens: talents, jeweler, quartermaster, questline choices, the tabbed quest log, panel lines for effects and targets |
+| `05g_qol.sh` | v7.1 comfort, loaded last: special keys (`key_esc` -> `KEY`), the chat line (`chat_key`, `chat_complete`, history), `render_input` (cursor, the quit question), the log [c] (`ui_chatlog`, `cl_build`, `chatlog_key`), scrolling of tall panels (`ui_scroll`, `UI_FOCUS` keeps a cursor in view), waystones (`ui_way`, `way_key`), `bell`, `save_gfx` (graphics + bell) |
 | `06_main.sh` | picks the main loop for the mode |
 
 `./build.sh --where N` maps line N of the built script back to its module.

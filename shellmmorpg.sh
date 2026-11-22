@@ -35,7 +35,7 @@
 #  This file is built from src/*.sh and world.txt by build.sh - edit those.
 # ============================================================================
 
-VERSION="7.0"
+VERSION="7.1"
 DATA_DIR="${SHELLMMO_DIR:-$HOME/.shellmmorpg}"
 SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
 # string lengths must count characters, not bytes (emoji graphics): make sure we run in a UTF-8 locale
@@ -4556,13 +4556,17 @@ for k in "${!FXG[@]}"; do GLY[f$k]=${FXG[$k]}; done
 LSPAN=()
 for (( dy = -LRY; dy <= LRY; dy++ )); do isqrt $(( LRX * LRX * (LRY * LRY - dy * dy) / (LRY * LRY) )); LSPAN[dy+LRY]=$R; done
 
-logm() {
-  LOG_T+=("$1"); LOG_C+=("${2:-$K_SYS}")
-  if (( ${#LOG_T[@]} > 80 )); then LOG_T=("${LOG_T[@]:20}"); LOG_C=("${LOG_C[@]:20}"); fi
+logm() {  # v7.1: with the time and a sequence number (the chat log [c] shows both, in order); 400 kept
+  local tm; printf -v tm '%(%H:%M)T' -1
+  LSEQ=$(( LSEQ + 1 ))
+  LOG_T+=("$1"); LOG_C+=("${2:-$K_SYS}"); LOG_TM+=("$tm"); LOG_S+=("$LSEQ")
+  if (( ${#LOG_T[@]} > 400 )); then LOG_T=("${LOG_T[@]:100}"); LOG_C=("${LOG_C[@]:100}"); LOG_TM=("${LOG_TM[@]:100}"); LOG_S=("${LOG_S[@]:100}"); fi
 }
 chatm() {
-  CHL_T+=("$1"); CHL_C+=("${2:-$K_CHAT}")
-  if (( ${#CHL_T[@]} > 60 )); then CHL_T=("${CHL_T[@]:20}"); CHL_C=("${CHL_C[@]:20}"); fi
+  local tm; printf -v tm '%(%H:%M)T' -1
+  LSEQ=$(( LSEQ + 1 ))
+  CHL_T+=("$1"); CHL_C+=("${2:-$K_CHAT}"); CHL_TM+=("$tm"); CHL_S+=("$LSEQ")
+  if (( ${#CHL_T[@]} > 400 )); then CHL_T=("${CHL_T[@]:100}"); CHL_C=("${CHL_C[@]:100}"); CHL_TM=("${CHL_TM[@]:100}"); CHL_S=("${CHL_S[@]:100}"); fi
 }
 
 valid_sym() {  # single printable ASCII char, not the protocol separator
@@ -5760,6 +5764,10 @@ chat_submit() {
     "/w "*)  a=${t#/w }; b=${a#* }; a=${a%% *}
              [[ -n $a && $b != "$a" ]] || { logm "Usage: /w <name> <message>"; return; }
              send WHISP "$MY_ID" "$MY_NAME" "$a" "$b"; chatm "[to $a] $b" "$K_WHISP" ;;
+    "/r "*)  [[ -n $LAST_WHISP ]] || { logm "Nobody whispered to you yet. /w <name> <message>"; return; }
+             b=${t#/r }; send WHISP "$MY_ID" "$MY_NAME" "$LAST_WHISP" "$b"; chatm "[to $LAST_WHISP] $b" "$K_WHISP" ;;
+    /bell)   BELL_ON=$(( ! BELL_ON )); save_gfx
+             if (( BELL_ON )); then logm "The bell rings again for whispers, invites and your name." "$K_SYS"; else logm "The bell is off. /bell turns it on again." "$K_SYS"; fi ;;
     "/invite "*) send INV "$MY_ID" "$MY_NAME" "${t#/invite }" ;;
     /accept) send PACC "$MY_ID" ;;
     /leave)  send PLEAVE "$MY_ID"; logm "You leave your party." ;;
@@ -5798,21 +5806,12 @@ chat_submit() {
       for id in "${!OP_NAME[@]}"; do list+=", ${OP_SYM[$id]:-@} ${OP_NAME[$id]} (${C_NAME[${OP_CLS[$id]:-0}]} ${OP_LVL[$id]})"; done
       logm "Online: $list" ;;
     /admin|"/admin "*) adm_cmd "${t#/admin}" ;;
-    /help)   logm "/p party  /w name msg  /invite /accept /leave  /trade name  /give name gold|#item  /symbol c  /color c  /who  /me  /home${IS_ADMIN/#1/  /admin}" ;;
+    /help)   logm "/p party  /w name msg  /invite /accept /leave  /trade name  /give name gold|#item  /symbol c  /color c  /who  /me  /home  /r reply  /bell${IS_ADMIN/#1/  /admin}  - [tab] names  [↑] last lines" ;;
     /*)      logm "Unknown command ${t%% *} - try /help" ;;
     *)       send CHAT "$MY_ID" "$MY_NAME" "$t"; chatm "$MY_NAME: $t" "$K_CHAT"; MY_SAY=$t MY_SAYT=$(( NOW + 5000 )) MAP_DIRTY=1 ;;
   esac
 }
 
-chat_key() {
-  local k=$1 rest
-  case $k in
-    ''|$'\r') CHATTING=0; chat_submit; CHAT_BUF="" ;;
-    $'\e')    rest=""; read -rsn5 -t 0.01 rest; [[ -z $rest ]] && { CHATTING=0; CHAT_BUF=""; } ;;
-    $'\x7f'|$'\b') CHAT_BUF=${CHAT_BUF%?} ;;
-    *) if [[ $k != [[:cntrl:]] ]] && (( ${#CHAT_BUF} < 180 )); then CHAT_BUF+=$k; fi ;;
-  esac
-}
 
 # --- network messages -----------------------------------------------------------
 send_pos() {
@@ -5941,7 +5940,7 @@ cli_srv() {  # typ fields...
       else unset "OP_WANTED[$a]"; fi
       MAP_DIRTY=1 ;;
     PINV) [[ $a == "$MY_ID" ]] || return
-          logm "${b//[^A-Za-z0-9_-]/} invites you to a party - type /accept to join." "$K_PARTY"; printf '\a' ;;
+          logm "${b//[^A-Za-z0-9_-]/} invites you to a party - type /accept to join." "$K_PARTY"; bell ;;
     INFO) [[ $a == "$MY_ID" ]] || return; clean_text "$b"; logm "$CLEAN" "$K_SYS" ;;
     DSTART)
       [[ $a =~ ^D[0-9]+$ && $b =~ ^(0|[1-9][0-9]?)$ ]] && (( b < NDT )) && num "$c" || return
@@ -6022,9 +6021,9 @@ cli_line() {
     BYE)   [[ -n ${OP_NAME[$from]} ]] && logm "$nm has left the world." "$K_SYS"; op_del "$from" ;;
     CHAT)  clean_text "$b"; [[ -n $CLEAN ]] || return
            chatm "$nm: $CLEAN" "$K_CHAT"; OP_SAY[$from]=$CLEAN OP_SAYT[$from]=$(( NOW + 5000 )) MAP_DIRTY=1
-           [[ ${CLEAN,,} == *"${MY_NAME,,}"* ]] && printf '\a' ;;
+           [[ ${CLEAN,,} == *"${MY_NAME,,}"* ]] && bell ;;
     PCHAT) in_party "$from" || return; clean_text "$b"; chatm "[party] $nm: $CLEAN" "$K_PARTY" ;;
-    WHISP) [[ ${b,,} == "${MY_NAME,,}" ]] || return; clean_text "$c"; chatm "[$nm whispers] $CLEAN" "$K_WHISP"; printf '\a' ;;
+    WHISP) [[ ${b,,} == "${MY_NAME,,}" ]] || return; clean_text "$c"; chatm "[$nm whispers] $CLEAN" "$K_WHISP"; LAST_WHISP=$nm; bell ;;
     EMOTE) clean_text "$b"; chatm "* $nm $CLEAN" "$K_WHISP" ;;
     EVT)   clean_text "$b"; logm "* $nm $CLEAN" "$K_SYS" ;;
     HEAL)  [[ $b == "$MY_ID" ]] && num "$c" && (( ! DEAD )) || return
@@ -6340,7 +6339,7 @@ fish_tick() {
     FISH_ZS=$(( RANDOM % (FISH_W - FISH_ZW) ))
     FISH_P=$(( 1500 - rar * 250 ))
     FISH_ST=2 FISH_T0=$NOW FISH_END=$(( NOW + 4500 ))
-    printf '\a'
+    bell
   elif (( FISH_ST == 2 && NOW >= FISH_END )); then
     FISH_ST=0; logm "The fish got away..." "$K_HURT"
   fi
@@ -6502,13 +6501,34 @@ craft_key() {
     else logm "You have no fish. Press [g] next to water to fish."; fi
     return
   fi
-  [[ $1 == [a-l] ]] || return
-  i=${keys%%"$1"*}; craft_do "${#i}"
+  craft_vis
+  local p=-1; for i in "${!CR_VIS[@]}"; do (( CR_VIS[i] == CRAFT_CUR )) && p=$i; done
+  case $1 in                                    # v7.1: a cursor - there are more recipes than letters
+    UP)        (( p > 0 )) && CRAFT_CUR=${CR_VIS[p-1]} ;;
+    DOWN)      (( p >= 0 && p < ${#CR_VIS[@]} - 1 )) && CRAFT_CUR=${CR_VIS[p+1]} ;;
+    PGUP|HOME) CRAFT_CUR=${CR_VIS[0]:-0} ;;
+    PGDN|END)  CRAFT_CUR=${CR_VIS[-1]:-0} ;;
+    ''|$'\r'|' ') (( p >= 0 )) && craft_do "$CRAFT_CUR" ;;
+    [a-l])     i=${keys%%"$1"*}; (( ${#i} < ${#RC_ID[@]} )) && { CRAFT_CUR=${#i}; craft_do "${#i}"; } ;;
+  esac
+}
+
+CRAFT_CUR=0 CR_LAST=""
+craft_vis() {  # -> CR_VIS: the recipes shown (at the campfire only the fish you have); the cursor stays on one
+  local i
+  CR_VIS=()
+  for i in "${!RC_ID[@]}"; do
+    [[ $CRAFT == cook ]] && (( MATS[${RC_ID[i]#c}] <= 0 )) && continue
+    CR_VIS+=("$i")
+  done
+  [[ $CR_LAST == "$CRAFT" ]] || { CR_LAST=$CRAFT; CRAFT_CUR=${CR_VIS[0]:-0}; }
+  for i in "${CR_VIS[@]}"; do (( i == CRAFT_CUR )) && return; done
+  CRAFT_CUR=${CR_VIS[0]:-0}
 }
 
 ui_craft() {
-  local i keys=abcdefghijkl title t lw
-  craft_build
+  local i keys=abcdefghijkl title t lw k sel
+  craft_build; craft_vis
   case $CRAFT in
     forge) title="FORGE - turn 6 ore into Rare, Epic or Legendary gear" ;;
     alch)  title="ALCHEMY - brew potions and tonics from herbs" ;;
@@ -6519,28 +6539,29 @@ ui_craft() {
   ui ""
   local mxn=0
   for i in "${!RC_ID[@]}"; do craft_can "$i"; dispw "$NEEDP"; (( DW > mxn )) && mxn=$DW; done
-  for i in "${!RC_ID[@]}"; do
+  for i in "${CR_VIS[@]}"; do
     craft_can "$i"
+    k="   "; (( i < ${#keys} )) && k="[${keys:i:1}]"
+    sel="  "; (( i == CRAFT_CUR )) && { sel=$'\e[1;38;5;226m▶\e[0m '; UI_FOCUS=${#UIT[@]}; }
     if [[ $CRAFT == cook ]]; then
-      (( MATS[${RC_ID[i]#c}] > 0 )) || continue
-      uix "  [${keys:i:1}] ${RC_LAB[i]}   ${K_SYS}x${MATS[${RC_ID[i]#c}]}$N" "  [x] ${RC_LAB[i]}   x${MATS[${RC_ID[i]#c}]}"
+      uix "$sel$k ${RC_LAB[i]}   ${K_SYS}x${MATS[${RC_ID[i]#c}]}$N" "  [x] ${RC_LAB[i]}   x${MATS[${RC_ID[i]#c}]}"
     else
       lw=$(( VW - 8 - mxn )); (( lw > 38 )) && lw=38; (( lw < 16 )) && lw=16
       t=${RC_LAB[i]}; dispw "$t"; while (( DW > lw )); do t=${t:0:${#t}-1}; dispw "$t"; done
       padr "$t" "$lw"; t=$PADS
-      uix "  [${keys:i:1}] $t $NEEDC" "  [x] $t $NEEDP"
+      uix "$sel$k $t $NEEDC" "  [x] $t $NEEDP"
     fi
   done
   ui ""
   case $CRAFT in
     cook)  ui "  Grilled Fish: heals 35%, Well Fed 5 min (double regeneration)." "$K_SYS"
            ui "  Fisherman's Feast: heals 70%, Well Fed+ 10 min (+10% damage)." "$K_SYS"
-           ui "  [a-j] cook one   [z] cook everything   [esc] close   - eat with [u]" "$K_SYS" ;;
+           ui "  [↑↓] [enter] cook one  [z] cook all  [esc] close" "$K_SYS" ;;
     forge) ui "  [x] weapon type: ${WK_NAME[FWK]}   [y] armor type: ${AK_NAME[FAK]}   (what a ${C_NAME[CLS]} can use)" "$K_LOOT"
            ui "  Ore comes from veins (◆) next to mountains - see [p] professions." "$K_SYS"
-           ui "  [a-l] forge   [esc] close" "$K_SYS" ;;
+           ui "  [↑↓] [enter] forge   [a-l] quick   [esc] close" "$K_SYS" ;;
     alch)  ui "  Herbs (♣) grow in the wild - see [p] professions." "$K_SYS"
-           ui "  [a-j] brew   [esc] close" "$K_SYS" ;;
+           ui "  [↑↓] [enter] brew   [a-l] quick   [esc] close" "$K_SYS" ;;
   esac
 }
 
@@ -6750,7 +6771,7 @@ trade_msg() {  # typ from name target fields...
     TREQ)
       if [[ $TR_OUT == "$from" && -z $TR_WITH ]]; then send TACC "$MY_ID" "$MY_NAME" "$from"; trade_open "$from"; return; fi
       TR_IN[$from]=$NOW
-      logm "$nm wants to trade with you - type /trade $nm to accept." "$K_LOOT"; printf '\a' ;;
+      logm "$nm wants to trade with you - type /trade $nm to accept." "$K_LOOT"; bell ;;
     TACC)
       [[ $TR_OUT == "$from" && -z $TR_WITH ]] && (( NOW - TR_OUT_T < 60000 )) && trade_open "$from" ;;
     TCAN)
@@ -7147,7 +7168,7 @@ toggle_gfx() {
   else logm "Graphics: classic ASCII. [v] switches to HD emoji graphics." "$K_GOOD"; fi
 }
 
-save_gfx() { mkdir -p "${GFX_FILE%/*}" 2>/dev/null; printf 'GFX=%s\n' "$GFX" > "$GFX_FILE" 2>/dev/null; }
+# (save_gfx: 05g_qol.sh - it keeps the bell setting too)
 
 # --- juice: floating numbers, hit flashes, nicer bars -------------------------------
 ft_add() {  # x y text style
@@ -8531,17 +8552,6 @@ render_log() {  # events on top, the last chat lines below
   done
 }
 
-render_input() {
-  local t=$CHAT_BUF w=$(( COLS - 12 )) l=$'\e['"$INPY;1H"
-  if (( CHATTING )); then
-    (( ${#t} > w )) && t=${t: -w}
-    l+=$' \e[1;38;5;51msay>'"$N $t"$'\e[5m_\e[0m'
-  else
-    t=" [wasd] move [1-3] skills [e/r] potions [u] eat [g] fish/gather [i]nv [x] talents [y] allies [p]rof [m]ap [q]uests [b]easts [c]hat log [H] collection [v] graphics [enter] chat [?] help"
-    l+="${K_SYS}${t:0:COLS-1}$N"
-  fi
-  emit inp "$l"$'\e[K'
-}
 
 # --- full-screen panels drawn inside the map frame ------------------------
 ui() { UIT+=("$1"); UIC+=("${2:-$K_CHAT}"); UIL+=(-1); }
@@ -8726,34 +8736,7 @@ ui_bestiary() {  # all hostile creatures sorted by level, in pages that fit the 
   else ui "  Quests tell you where each creature lives. [esc] close" "$K_SYS"; fi
 }
 
-ui_chatlog() {
-  local half i ne=${#LOG_T[@]} nc=${#CHL_T[@]}
-  half=$(( (VH - 4) / 2 ))
-  ui "  EVENTS" "$B"
-  for (( i = ne - half; i < ne; i++ )); do (( i >= 0 )) && ui "  ${LOG_T[i]}" "${LOG_C[i]}"; done
-  ui "  CHAT" "$B"
-  (( nc )) || ui "  nobody said anything yet - press [enter] to chat" "$K_SYS"
-  for (( i = nc - half; i < nc; i++ )); do (( i >= 0 )) && ui "  ${CHL_T[i]}" "${CHL_C[i]}"; done
-}
 
-ui_way() {
-  local i a cost=$(( 10 + LVL * 3 ))
-  ui "  WAYSTONE NETWORK" "$K_LOOT$B"
-  ui "  Travel to any attuned waystone for $cost gold. You have $GOLD gold."
-  ui ""
-  for i in "${!WAYSTONES[@]}"; do
-    a=(${WAYSTONES[i]})
-    if [[ ${WAYS:i:1} == 1 ]]; then
-      cheb $(( a[1] - PX )) $(( a[2] - PY ))
-      if (( D <= 3 )) && [[ $CUR_MAP == W ]]; then ui "  [$(( (i + 1) % 10 ))] ${EMJ[way]}${a[0]//_/ }   (you are here)" "$K_SYS"
-      else ui "  [$(( (i + 1) % 10 ))] ${EMJ[way]}${a[0]//_/ }"; fi
-    else
-      ui "  [ ] ??? - not attuned yet" "$K_SYS"
-    fi
-  done
-  ui ""
-  ui "  Walk past a waystone (&) once to attune it.   [esc] close" "$K_SYS"
-}
 
 HELP_PG=0
 ui_help() {  # two pages: [<] [>] turn
@@ -8763,9 +8746,10 @@ ui_help() {  # two pages: [<] [>] turn
   ui "  walk into an NPC to talk  -  f / space attack next to you"
   ui "  1 2 3 skills   e / r potions   u eat   i inventory   y allies"
   ui "  x talents  g fish / gather  p professions  m map  z ride  o achievements"
-  ui "  q quests, questlines, reputation  b bestiary  c chat log  H collection"
-  ui "  v graphics   Q quit   enter chat - /p party  /w name msg"
-  ui "  /invite /accept /leave /trade name /give name gold|#item /who /admin"
+  ui "  q quests, questlines, reputation  b bestiary  c log (scrolls)  H collection"
+  ui "  v graphics   Q quit (asks)   enter chat: ↑ last lines, tab names, ←→ edit"
+  ui "  /p party /w name msg /r reply /invite /accept /leave /trade /give /who /bell"
+  ui "  Long lists: PgUp PgDn scroll, ↑↓ + enter pick (crafting, waystones)"
   ui "  THE WORLD" "$B"
   ui "  Hearthmoor is the heart. South: desert (Oasis of Kadar), the Isles,"
   ui "  the Badlands. East: tundra, Ashen Wastes, Crystal Highlands, Jungle,"
@@ -8953,7 +8937,7 @@ ui_map() {
 
 render_ui() {   # panels use every column of the frame, the world map is drawn in ASCII
   local r t VW=$MW TW=1
-  UIT=() UIC=() UIL=()
+  UIT=() UIC=() UIL=() UI_FOCUS=-1
   for (( r = 0; r < VH; r++ )); do unset "SCR[m$r]"; done          # the map rows are covered now
   if [[ $UI == map ]]; then ui_map; return; fi
   case $UI in
@@ -8966,6 +8950,7 @@ render_ui() {   # panels use every column of the frame, the world map is drawn i
     inn) ui_inn ;; visit) ui_visit ;; dsp) ui_dsp ;; book) ui_book ;; guest) ui_guest ;;
   esac
   [[ -n $UI ]] || { MAP_DIRTY=1; return; }
+  ui_scroll                                                         # v7.1: taller than the window - scroll
   for (( r = 0; r < VH; r++ )); do
     if (( ${UIL[r]:--1} > VW )); then             # too wide for the frame: cut, keep the colors
       clipl "${UIT[r]}" "$VW"; out+=$'\e['"$(( r + 3 ));2H$N$CL"
@@ -9010,23 +8995,27 @@ render() {
 #  Input & main loop
 # ---------------------------------------------------------------------------
 handle_key() {
-  local k=$1 rest
+  local k=$1
   KEYD=1
+  if [[ $k == $'\e' ]]; then key_esc; k=$KEY; [[ -n $k ]] || return; fi     # v7.1: every special key has a name
   if (( CHATTING )); then
     chat_key "$k"
-    while (( CHATTING )) && read -t 0; do IFS= read -rsn1 k; chat_key "$k"; done
+    while (( CHATTING )) && read -t 0; do                                     # (pasted text: take it all at once)
+      IFS= read -rsn1 k
+      if [[ $k == $'\e' ]]; then key_esc; k=$KEY; [[ -n $k ]] || continue; fi
+      chat_key "$k"
+    done
+    MAP_DIRTY=1
     return
   fi
-  if [[ $k == $'\e' ]]; then
-    rest=""; read -rsn2 -t 0.01 rest
-    case $rest in
-      '[A'|OA) k=UP ;; '[B'|OB) k=DOWN ;; '[C'|OC) k=RIGHT ;; '[D'|OD) k=LEFT ;;
-      '') k=ESC ;;
-      *) read -rsn6 -t 0.01 rest; return ;;
-    esac
+  if (( QUIT_ASK )); then                                                     # v7.1: Q asks first
+    QUIT_ASK=0
+    [[ $k == [yYjJQ] ]] && exit 0
+    return
   fi
   if [[ -n $UI ]]; then
     MAP_DIRTY=1
+    if [[ $k == @(PGUP|PGDN|HOME|END) && $UI != @(chatlog|way|craft|map|inv|bank|trade) ]]; then ui_scroll_key "$k"; return; fi
     if [[ $UI == trade ]]; then trade_key "$k"; return; fi
     if [[ $UI == bank ]]; then bank_key "$k"; [[ -z $UI ]] && NEED_FULL=1; return; fi
     if [[ $UI == story ]]; then [[ $k == @(|$'\r'|' '|ESC|q) ]] && { UI="" NEED_FULL=1; }; return; fi
@@ -9037,14 +9026,14 @@ handle_key() {
       inv)   if [[ $k == i ]]; then inv_leave_tab; UI=""; else inv_key "$k"; fi ;;
       quest) quest_key "$k" ;;
       map)   wm_key "$k"; [[ -z $UI ]] && NEED_FULL=1 ;;
-      way)   [[ $k == [1-9] ]] && way_travel $(( k - 1 )); [[ $k == 0 ]] && way_travel 9 ;;
+      way)   way_key "$k" ;;
       help)  case $k in '?') UI="" ;; RIGHT|'>'|.|d|l|' ') (( HELP_PG < 3 )) && HELP_PG=$(( HELP_PG + 1 )) ;; LEFT|'<'|,|a|h) (( HELP_PG > 0 )) && HELP_PG=$(( HELP_PG - 1 )) ;; esac ;;
       beasts)  case $k in
                  b) UI="" ;;
                  RIGHT|'>'|.|d|l|' ') BEAST_PG=$(( BEAST_PG + 1 )) ;;
                  LEFT|'<'|,|a|h)      (( BEAST_PG > 0 )) && BEAST_PG=$(( BEAST_PG - 1 )) ;;
                esac ;;
-      chatlog) [[ $k == c ]] && UI="" ;;
+      chatlog) chatlog_key "$k" ;;
       prof)    [[ $k == p ]] && UI="" ;;
       craft)   craft_key "$k" ;;
       allies)  if [[ $k == y ]]; then UI=""; else aly_key "$k"; fi ;;
@@ -9083,7 +9072,7 @@ handle_key() {
     m)         wm_open; UI=map MAP_DIRTY=1 ;;
     q)         UI=qlog MAP_DIRTY=1 ;;
     b)         UI=beasts MAP_DIRTY=1 ;;
-    c)         UI=chatlog MAP_DIRTY=1 ;;
+    c)         UI=chatlog CL_OFF=0 MAP_DIRTY=1 ;;
     n)         TAGS_ON=$(( ! TAGS_ON )) MAP_DIRTY=1 ;;
     v)         toggle_gfx ;;
     g)         gather_key ;;
@@ -9096,9 +9085,9 @@ handle_key() {
     o)         UI=ach MAP_DIRTY=1 ;;
     H)         BOOK_PG=0 UI=book MAP_DIRTY=1 ;;
     '?')       UI=help MAP_DIRTY=1 ;;
-    ''|$'\r'|t) CHATTING=1 CHAT_BUF="" ;;
-    /)         CHATTING=1 CHAT_BUF="/" ;;
-    Q)         exit 0 ;;
+    ''|$'\r'|t) chat_open "" ;;
+    /)         chat_open "/" ;;
+    Q)         QUIT_ASK=1 ;;
   esac
 }
 
@@ -12037,6 +12026,271 @@ adm_effect() {  # effect args... (only ever from the world server, privately)
     item) valid_item "$2" || return; add_item "$2" ;;
   esac
 }
+
+# ---------------------------------------------------------------------------
+#  Module 05g - comfort (v7.1): special keys (PgUp/PgDn/Home/End/Del,
+#  modified arrows), a chat line that edits like a shell (cursor, history,
+#  Tab completes names, ctrl+w/u), a chat log that scrolls (with times,
+#  wrapped, three tabs), panels taller than the window scroll, quitting asks
+#  first, the bell can be switched off.
+# ---------------------------------------------------------------------------
+KEY="" QUIT_ASK=0 CHAT_POS=0 CHAT_HI=-1 CHAT_SAVE="" LAST_WHISP="" BELL_ON=1
+CHAT_HIST=()
+CL_TAB=0 CL_OFF=0 CL_KEY="" CL_TOT=0 CLW_T=() CLW_C=()
+UI_SCR=0 UI_SCR_UI="" UI_FOCUS=-1
+LSEQ=0
+
+bell() { (( BELL_ON )) && printf '\a'; }
+
+key_esc() {  # after an ESC byte: read the rest of the sequence -> KEY (ESC UP DOWN LEFT RIGHT HOME END DEL PGUP PGDN, "" = unknown)
+  local c s=""
+  KEY=ESC
+  IFS= read -rsn1 -t 0.01 c || return 0
+  if [[ $c != '[' && $c != O ]]; then KEY=""; return 0; fi          # alt+key: nothing
+  while IFS= read -rsn1 -t 0.01 c; do
+    s+=$c
+    [[ $c == [A-Za-z~] ]] && break
+    (( ${#s} > 7 )) && break
+  done
+  case $s in
+    A|*\;?A) KEY=UP ;;   B|*\;?B) KEY=DOWN ;;  C|*\;?C) KEY=RIGHT ;;  D|*\;?D) KEY=LEFT ;;
+    H|1~|7~|*\;?H) KEY=HOME ;;  F|4~|8~|*\;?F) KEY=END ;;
+    3~) KEY=DEL ;;  5~) KEY=PGUP ;;  6~) KEY=PGDN ;;
+    *) KEY="" ;;
+  esac
+}
+
+# --- the chat line ------------------------------------------------------------------------------
+chat_open() { CHATTING=1 CHAT_BUF=$1 CHAT_POS=${#1} CHAT_HI=-1 CHAT_SAVE=""; }
+
+chat_hist_add() {
+  [[ -n ${1//[[:space:]]/} ]] || return
+  (( ${#CHAT_HIST[@]} )) && [[ ${CHAT_HIST[-1]} == "$1" ]] && return
+  CHAT_HIST+=("$1")
+  (( ${#CHAT_HIST[@]} > 50 )) && CHAT_HIST=("${CHAT_HIST[@]:10}")
+}
+
+CHAT_CMDS=(/p /w /r /invite /accept /leave /me /home /trade /give /symbol /color /who /bell /help /admin)
+chat_complete() {  # Tab: complete the word before the cursor - a player's name, or a /command at the start
+  local pre=${CHAT_BUF:0:CHAT_POS} post=${CHAT_BUF:CHAT_POS} word cands=() c id common i a b
+  word=${pre##* }
+  [[ -n $word ]] || return
+  if [[ $word == /* && $pre == "$word" ]]; then
+    for c in "${CHAT_CMDS[@]}"; do [[ $c == "$word"* ]] && cands+=("$c"); done
+  else
+    for id in "${!OP_NAME[@]}"; do [[ ${OP_NAME[$id],,} == "${word,,}"* ]] && cands+=("${OP_NAME[$id]}"); done
+    [[ ${MY_NAME,,} == "${word,,}"* ]] && cands+=("$MY_NAME")
+  fi
+  (( ${#cands[@]} )) || return
+  if (( ${#cands[@]} == 1 )); then c="${cands[0]} "
+  else                                                     # several: as far as they agree, and show them
+    common=${cands[0]}
+    for c in "${cands[@]}"; do
+      for (( i = 0; i < ${#common}; i++ )); do a=${common:i:1} b=${c:i:1}; [[ ${a,,} == "${b,,}" ]] || break; done
+      common=${common:0:i}
+    done
+    (( ${#common} >= ${#word} )) || common=$word
+    c=$common
+    logm "Tab: ${cands[*]}" "$K_SYS"
+  fi
+  pre=${pre:0:${#pre}-${#word}}$c
+  CHAT_BUF=${pre:0:180}$post CHAT_POS=${#pre}
+  (( CHAT_POS > ${#CHAT_BUF} )) && CHAT_POS=${#CHAT_BUF}
+}
+
+chat_key() {
+  local k=$1 a n
+  case $k in
+    ''|$'\r'|$'\n') CHATTING=0; chat_hist_add "$CHAT_BUF"; chat_submit; CHAT_BUF="" CHAT_POS=0 ;;
+    ESC)            CHATTING=0 CHAT_BUF="" CHAT_POS=0 ;;
+    $'\x7f'|$'\b')  (( CHAT_POS > 0 )) && { CHAT_BUF=${CHAT_BUF:0:CHAT_POS-1}${CHAT_BUF:CHAT_POS}; CHAT_POS=$(( CHAT_POS - 1 )); } ;;
+    DEL|$'\x04')    CHAT_BUF=${CHAT_BUF:0:CHAT_POS}${CHAT_BUF:CHAT_POS+1} ;;
+    LEFT|$'\x02')   (( CHAT_POS > 0 )) && CHAT_POS=$(( CHAT_POS - 1 )) ;;
+    RIGHT|$'\x06')  (( CHAT_POS < ${#CHAT_BUF} )) && CHAT_POS=$(( CHAT_POS + 1 )) ;;
+    HOME|$'\x01')   CHAT_POS=0 ;;
+    END|$'\x05')    CHAT_POS=${#CHAT_BUF} ;;
+    $'\x15')        CHAT_BUF=${CHAT_BUF:CHAT_POS} CHAT_POS=0 ;;                   # ctrl+u: everything before the cursor
+    $'\x0b')        CHAT_BUF=${CHAT_BUF:0:CHAT_POS} ;;                             # ctrl+k: everything after it
+    $'\x17')                                                                       # ctrl+w: the word before the cursor
+      a=${CHAT_BUF:0:CHAT_POS}; a=${a%"${a##*[! ]}"}
+      if [[ $a == *' '* ]]; then a="${a% *} "; else a=""; fi
+      CHAT_BUF=$a${CHAT_BUF:CHAT_POS} CHAT_POS=${#a} ;;
+    $'\t')          chat_complete ;;
+    UP)  n=${#CHAT_HIST[@]}; (( n )) || return
+         if (( CHAT_HI < 0 )); then CHAT_SAVE=$CHAT_BUF CHAT_HI=$(( n - 1 )); elif (( CHAT_HI > 0 )); then CHAT_HI=$(( CHAT_HI - 1 )); fi
+         CHAT_BUF=${CHAT_HIST[CHAT_HI]} CHAT_POS=${#CHAT_HIST[CHAT_HI]} ;;
+    DOWN) (( CHAT_HI >= 0 )) || return
+         if (( CHAT_HI < ${#CHAT_HIST[@]} - 1 )); then CHAT_HI=$(( CHAT_HI + 1 )); CHAT_BUF=${CHAT_HIST[CHAT_HI]}
+         else CHAT_HI=-1 CHAT_BUF=$CHAT_SAVE; fi
+         CHAT_POS=${#CHAT_BUF} ;;
+    *)   if (( ${#k} == 1 )) && [[ $k != [[:cntrl:]] ]] && (( ${#CHAT_BUF} < 180 )); then
+           CHAT_BUF=${CHAT_BUF:0:CHAT_POS}$k${CHAT_BUF:CHAT_POS}; CHAT_POS=$(( CHAT_POS + 1 ))
+         fi ;;
+  esac
+}
+
+render_input() {
+  local w=$(( COLS - 9 )) l=$'\e['"$INPY;1H" t off cur
+  if (( CHATTING )); then
+    (( CHAT_POS > ${#CHAT_BUF} )) && CHAT_POS=${#CHAT_BUF}
+    off=0; (( CHAT_POS >= w )) && off=$(( CHAT_POS - w + 1 ))     # the cursor stays in view
+    t=${CHAT_BUF:off:w}; cur=$(( CHAT_POS - off ))
+    local c=${t:cur:1}; [[ -n $c ]] || c=' '
+    l+=$' \e[1;38;5;51msay>'"$N ${t:0:cur}"$'\e[7m'"$c"$'\e[27m'"${t:cur+1}"
+  elif (( QUIT_ASK )); then
+    l+=$' \e[1;38;5;226mQuit the game? Your hero is saved.  [y] yes   any other key: keep playing'"$N"
+  else
+    t=" [wasd] move [1-3] skills [e/r] potions [u] eat [g] fish/gather [i]nv [x] talents [y] allies [p]rof [m]ap [q]uests [b]easts [c]hat log [H] collection [v] graphics [enter] chat [?] help"
+    l+="${K_SYS}${t:0:COLS-1}$N"
+  fi
+  emit inp "$l"$'\e[K'
+}
+
+# --- the chat log [c]: chat, events or both, with the time, wrapped, scrolling ---------------------------
+cl_wrap() {  # text color time width -> appends to CLW_T / CLW_C
+  local t="$3 $1" w=$4 cut sp
+  while (( ${#t} > w )); do
+    cut=${t:0:w}; sp=${cut% *}; [[ $cut == *' '* ]] && (( ${#sp} > 8 )) && cut=$sp   # (a break at a space, not inside the indent)
+    CLW_T+=("$cut"); CLW_C+=("$2")
+    t="      ${t:${#cut}}"; t="      ${t##+( )}"
+  done
+  CLW_T+=("$t"); CLW_C+=("$2")
+}
+
+cl_build() {  # -> CLW_T CLW_C: the wrapped lines of the current tab (cached)
+  local w=$(( VW - 6 )) i j ne=${#LOG_T[@]} nc=${#CHL_T[@]} key
+  key="$CL_TAB:$w:$LSEQ:$ne:$nc"
+  [[ $key == "$CL_KEY" ]] && return
+  CL_KEY=$key CLW_T=() CLW_C=()
+  case $CL_TAB in
+    0) for (( i = 0; i < nc; i++ )); do cl_wrap "${CHL_T[i]}" "${CHL_C[i]}" "${CHL_TM[i]:-     }" "$w"; done ;;
+    1) for (( i = 0; i < ne; i++ )); do cl_wrap "${LOG_T[i]}" "${LOG_C[i]}" "${LOG_TM[i]:-     }" "$w"; done ;;
+    *) i=0 j=0                                                    # both, in the order they happened
+       while (( i < ne || j < nc )); do
+         if (( j >= nc || (i < ne && ${LOG_S[i]:-0} <= ${CHL_S[j]:-0}) )); then
+           cl_wrap "${LOG_T[i]}" "${LOG_C[i]}" "${LOG_TM[i]:-     }" "$w"; i=$(( i + 1 ))
+         else cl_wrap "${CHL_T[j]}" "${CHL_C[j]}" "${CHL_TM[j]:-     }" "$w"; j=$(( j + 1 )); fi
+       done ;;
+  esac
+}
+
+ui_chatlog() {
+  local rows=$(( VH - 2 )) n first i tabs="" t lab
+  cl_build
+  n=${#CLW_T[@]}
+  (( CL_OFF > 0 && n > CL_TOT )) && CL_OFF=$(( CL_OFF + n - CL_TOT ))   # scrolled up: new lines do not move the view
+  CL_TOT=$n
+  (( CL_OFF > n - rows )) && CL_OFF=$(( n - rows )); (( CL_OFF < 0 )) && CL_OFF=0
+  for t in 0 1 2; do
+    lab=(chat events everything); lab=${lab[t]}
+    if (( t == CL_TAB )); then tabs+=$'\e[1;7m'" [$(( t + 1 ))] $lab "$'\e[0m'"$K_SYS "; else tabs+="$K_SYS [$(( t + 1 ))] $lab  "; fi
+  done
+  uix "  ${K_LOOT}${B}LOG$N  $tabs$N" "  LOG   [1] chat    [2] events    [3] everything  "
+  first=$(( n - rows - CL_OFF )); (( first < 0 )) && first=0
+  for (( i = first; i < first + rows; i++ )); do
+    if (( i < n )); then ui "  ${CLW_T[i]}" "${CLW_C[i]}"; else ui ""; fi
+  done
+  (( n )) || UIT[1]="  nothing yet - press [enter] to chat"
+  if (( CL_OFF )); then t="  ▼$CL_OFF [End]"; else t="  "; fi
+  ui "$t ↑↓ PgUp PgDn scroll  [Home] oldest  [c] close" "$K_SYS"
+}
+
+chatlog_key() {
+  local page=$(( VH - 3 ))
+  case $1 in
+    1|2|3) CL_TAB=$(( $1 - 1 )) CL_OFF=0 ;;
+    $'\t'|RIGHT) CL_TAB=$(( (CL_TAB + 1) % 3 )) CL_OFF=0 ;;
+    LEFT)        CL_TAB=$(( (CL_TAB + 2) % 3 )) CL_OFF=0 ;;
+    UP|k|w)      CL_OFF=$(( CL_OFF + 1 )) ;;
+    DOWN|j|s)    (( CL_OFF > 0 )) && CL_OFF=$(( CL_OFF - 1 )) ;;
+    PGUP)        CL_OFF=$(( CL_OFF + page )) ;;
+    PGDN|' ')    CL_OFF=$(( CL_OFF - page )); (( CL_OFF < 0 )) && CL_OFF=0 ;;
+    HOME|g)      CL_OFF=999999 ;;
+    END|G)       CL_OFF=0 ;;
+    c)           UI="" ;;
+    ''|$'\r'|t)  chat_open "" ;;
+    /)           chat_open "/" ;;
+  esac
+}
+
+# --- panels taller than the window scroll (PgUp/PgDn, Home/End) -------------------------------------
+ui_scroll() {  # called by render_ui after a panel was built: cut UIT/UIC/UIL to the window, with a marker line
+  local n=${#UIT[@]} rows max
+  [[ $UI == "$UI_SCR_UI" ]] || { UI_SCR=0 UI_SCR_UI=$UI; }
+  if (( n <= VH )); then UI_SCR=0; return; fi
+  rows=$(( VH - 1 )) max=$(( n - rows ))
+  if (( UI_FOCUS >= 0 )); then                         # a list with a cursor: keep it in view
+    (( UI_FOCUS < UI_SCR + 2 )) && UI_SCR=$(( UI_FOCUS - 2 ))
+    (( UI_FOCUS > UI_SCR + rows - 3 )) && UI_SCR=$(( UI_FOCUS - rows + 3 ))
+  fi
+  (( UI_SCR > max )) && UI_SCR=$max; (( UI_SCR < 0 )) && UI_SCR=0
+  UIT=("${UIT[@]:UI_SCR:rows}") UIC=("${UIC[@]:UI_SCR:rows}") UIL=("${UIL[@]:UI_SCR:rows}")
+  local up="" dn=""
+  (( UI_SCR > 0 )) && up="▲ "; (( UI_SCR < max )) && dn="▼ "
+  ui "  ${up}${dn}$(( UI_SCR + 1 ))-$(( UI_SCR + rows )) of $n  [PgUp] [PgDn] scroll" "$K_SYS"
+}
+
+ui_scroll_key() {  # PgUp PgDn Home End in any panel
+  local page=$(( VH - 3 ))
+  case $1 in
+    PGUP) UI_SCR=$(( UI_SCR - page )) ;;
+    PGDN) UI_SCR=$(( UI_SCR + page )) ;;
+    HOME) UI_SCR=0 ;;
+    END)  UI_SCR=999999 ;;
+  esac
+  (( UI_SCR < 0 )) && UI_SCR=0
+  UI_FOCUS=-1
+}
+
+# --- waystones: every stone can be picked (there are more than ten) ------------------------------------
+WAY_CUR=-1
+way_list() {  # -> WAY_L: the indexes of the attuned waystones
+  local i; WAY_L=()
+  for i in "${!WAYSTONES[@]}"; do [[ ${WAYS:i:1} == 1 ]] && WAY_L+=("$i"); done
+}
+
+ui_way() {
+  local i a cost=$(( 10 + LVL * 3 )) n=0 lab sel
+  way_list
+  { (( WAY_CUR >= 0 )) && [[ ${WAYS:WAY_CUR:1} == 1 ]]; } || WAY_CUR=${WAY_L[0]:--1}
+  ui "  WAYSTONE NETWORK" "$K_LOOT$B"
+  ui "  Travel to any attuned waystone for $cost gold. You have $GOLD gold."
+  ui ""
+  for i in "${!WAYSTONES[@]}"; do
+    a=(${WAYSTONES[i]})
+    if [[ ${WAYS:i:1} == 1 ]]; then
+      n=$(( n + 1 )); lab="   "; (( n <= 10 )) && lab="[$(( n % 10 ))]"
+      sel="  "; (( i == WAY_CUR )) && { sel="▶ "; UI_FOCUS=${#UIT[@]}; }
+      cheb $(( a[1] - PX )) $(( a[2] - PY ))
+      if (( D <= 3 )) && [[ $CUR_MAP == W ]]; then ui "$sel$lab ${EMJ[way]}${a[0]//_/ }   (you are here)" "$K_SYS"
+      elif (( i == WAY_CUR )); then ui "$sel$lab ${EMJ[way]}${a[0]//_/ }" "$B"
+      else ui "$sel$lab ${EMJ[way]}${a[0]//_/ }"; fi
+    else
+      ui "      ??? - not attuned yet" "$K_SYS"
+    fi
+  done
+  ui ""
+  ui "  Walk past a waystone (&) once to attune it." "$K_SYS"
+  ui "  [↑↓] choose  [enter] travel  [1-0] quick  [esc] close" "$K_SYS"
+}
+
+way_key() {
+  local i p=-1
+  way_list
+  for i in "${!WAY_L[@]}"; do [[ ${WAY_L[i]} == "$WAY_CUR" ]] && p=$i; done
+  case $1 in
+    [0-9]) i=$(( $1 == 0 ? 9 : $1 - 1 )); (( i < ${#WAY_L[@]} )) && way_travel "${WAY_L[i]}" ;;
+    UP|w|k)   (( p > 0 )) && WAY_CUR=${WAY_L[p-1]} ;;
+    DOWN|s|j) (( p >= 0 && p < ${#WAY_L[@]} - 1 )) && WAY_CUR=${WAY_L[p+1]} ;;
+    PGUP|HOME) WAY_CUR=${WAY_L[0]:--1} ;;
+    PGDN|END)  WAY_CUR=${WAY_L[-1]:--1} ;;
+    ''|$'\r'|' ') (( WAY_CUR >= 0 )) && way_travel "$WAY_CUR" ;;
+  esac
+}
+
+# --- settings that stay: graphics and the bell ------------------------------------------------------------
+save_gfx() { mkdir -p "${GFX_FILE%/*}" 2>/dev/null; printf 'GFX=%s\nBELL=%s\n' "$GFX" "$BELL_ON" > "$GFX_FILE" 2>/dev/null; }
+[[ -f $GFX_FILE && $'\n'$(<"$GFX_FILE") == *$'\n'BELL=0* ]] && BELL_ON=0
 
 # ---------------------------------------------------------------------------
 #  The open world (480x200), made by tools/worldgen. Legend:

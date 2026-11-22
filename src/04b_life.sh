@@ -295,7 +295,7 @@ fish_tick() {
     FISH_ZS=$(( RANDOM % (FISH_W - FISH_ZW) ))
     FISH_P=$(( 1500 - rar * 250 ))
     FISH_ST=2 FISH_T0=$NOW FISH_END=$(( NOW + 4500 ))
-    printf '\a'
+    bell
   elif (( FISH_ST == 2 && NOW >= FISH_END )); then
     FISH_ST=0; logm "The fish got away..." "$K_HURT"
   fi
@@ -457,13 +457,34 @@ craft_key() {
     else logm "You have no fish. Press [g] next to water to fish."; fi
     return
   fi
-  [[ $1 == [a-l] ]] || return
-  i=${keys%%"$1"*}; craft_do "${#i}"
+  craft_vis
+  local p=-1; for i in "${!CR_VIS[@]}"; do (( CR_VIS[i] == CRAFT_CUR )) && p=$i; done
+  case $1 in                                    # v7.1: a cursor - there are more recipes than letters
+    UP)        (( p > 0 )) && CRAFT_CUR=${CR_VIS[p-1]} ;;
+    DOWN)      (( p >= 0 && p < ${#CR_VIS[@]} - 1 )) && CRAFT_CUR=${CR_VIS[p+1]} ;;
+    PGUP|HOME) CRAFT_CUR=${CR_VIS[0]:-0} ;;
+    PGDN|END)  CRAFT_CUR=${CR_VIS[-1]:-0} ;;
+    ''|$'\r'|' ') (( p >= 0 )) && craft_do "$CRAFT_CUR" ;;
+    [a-l])     i=${keys%%"$1"*}; (( ${#i} < ${#RC_ID[@]} )) && { CRAFT_CUR=${#i}; craft_do "${#i}"; } ;;
+  esac
+}
+
+CRAFT_CUR=0 CR_LAST=""
+craft_vis() {  # -> CR_VIS: the recipes shown (at the campfire only the fish you have); the cursor stays on one
+  local i
+  CR_VIS=()
+  for i in "${!RC_ID[@]}"; do
+    [[ $CRAFT == cook ]] && (( MATS[${RC_ID[i]#c}] <= 0 )) && continue
+    CR_VIS+=("$i")
+  done
+  [[ $CR_LAST == "$CRAFT" ]] || { CR_LAST=$CRAFT; CRAFT_CUR=${CR_VIS[0]:-0}; }
+  for i in "${CR_VIS[@]}"; do (( i == CRAFT_CUR )) && return; done
+  CRAFT_CUR=${CR_VIS[0]:-0}
 }
 
 ui_craft() {
-  local i keys=abcdefghijkl title t lw
-  craft_build
+  local i keys=abcdefghijkl title t lw k sel
+  craft_build; craft_vis
   case $CRAFT in
     forge) title="FORGE - turn 6 ore into Rare, Epic or Legendary gear" ;;
     alch)  title="ALCHEMY - brew potions and tonics from herbs" ;;
@@ -474,28 +495,29 @@ ui_craft() {
   ui ""
   local mxn=0
   for i in "${!RC_ID[@]}"; do craft_can "$i"; dispw "$NEEDP"; (( DW > mxn )) && mxn=$DW; done
-  for i in "${!RC_ID[@]}"; do
+  for i in "${CR_VIS[@]}"; do
     craft_can "$i"
+    k="   "; (( i < ${#keys} )) && k="[${keys:i:1}]"
+    sel="  "; (( i == CRAFT_CUR )) && { sel=$'\e[1;38;5;226m▶\e[0m '; UI_FOCUS=${#UIT[@]}; }
     if [[ $CRAFT == cook ]]; then
-      (( MATS[${RC_ID[i]#c}] > 0 )) || continue
-      uix "  [${keys:i:1}] ${RC_LAB[i]}   ${K_SYS}x${MATS[${RC_ID[i]#c}]}$N" "  [x] ${RC_LAB[i]}   x${MATS[${RC_ID[i]#c}]}"
+      uix "$sel$k ${RC_LAB[i]}   ${K_SYS}x${MATS[${RC_ID[i]#c}]}$N" "  [x] ${RC_LAB[i]}   x${MATS[${RC_ID[i]#c}]}"
     else
       lw=$(( VW - 8 - mxn )); (( lw > 38 )) && lw=38; (( lw < 16 )) && lw=16
       t=${RC_LAB[i]}; dispw "$t"; while (( DW > lw )); do t=${t:0:${#t}-1}; dispw "$t"; done
       padr "$t" "$lw"; t=$PADS
-      uix "  [${keys:i:1}] $t $NEEDC" "  [x] $t $NEEDP"
+      uix "$sel$k $t $NEEDC" "  [x] $t $NEEDP"
     fi
   done
   ui ""
   case $CRAFT in
     cook)  ui "  Grilled Fish: heals 35%, Well Fed 5 min (double regeneration)." "$K_SYS"
            ui "  Fisherman's Feast: heals 70%, Well Fed+ 10 min (+10% damage)." "$K_SYS"
-           ui "  [a-j] cook one   [z] cook everything   [esc] close   - eat with [u]" "$K_SYS" ;;
+           ui "  [↑↓] [enter] cook one  [z] cook all  [esc] close" "$K_SYS" ;;
     forge) ui "  [x] weapon type: ${WK_NAME[FWK]}   [y] armor type: ${AK_NAME[FAK]}   (what a ${C_NAME[CLS]} can use)" "$K_LOOT"
            ui "  Ore comes from veins (◆) next to mountains - see [p] professions." "$K_SYS"
-           ui "  [a-l] forge   [esc] close" "$K_SYS" ;;
+           ui "  [↑↓] [enter] forge   [a-l] quick   [esc] close" "$K_SYS" ;;
     alch)  ui "  Herbs (♣) grow in the wild - see [p] professions." "$K_SYS"
-           ui "  [a-j] brew   [esc] close" "$K_SYS" ;;
+           ui "  [↑↓] [enter] brew   [a-l] quick   [esc] close" "$K_SYS" ;;
   esac
 }
 
@@ -705,7 +727,7 @@ trade_msg() {  # typ from name target fields...
     TREQ)
       if [[ $TR_OUT == "$from" && -z $TR_WITH ]]; then send TACC "$MY_ID" "$MY_NAME" "$from"; trade_open "$from"; return; fi
       TR_IN[$from]=$NOW
-      logm "$nm wants to trade with you - type /trade $nm to accept." "$K_LOOT"; printf '\a' ;;
+      logm "$nm wants to trade with you - type /trade $nm to accept." "$K_LOOT"; bell ;;
     TACC)
       [[ $TR_OUT == "$from" && -z $TR_WITH ]] && (( NOW - TR_OUT_T < 60000 )) && trade_open "$from" ;;
     TCAN)

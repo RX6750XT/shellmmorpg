@@ -329,7 +329,7 @@ toggle_gfx() {
   else logm "Graphics: classic ASCII. [v] switches to HD emoji graphics." "$K_GOOD"; fi
 }
 
-save_gfx() { mkdir -p "${GFX_FILE%/*}" 2>/dev/null; printf 'GFX=%s\n' "$GFX" > "$GFX_FILE" 2>/dev/null; }
+# (save_gfx: 05g_qol.sh - it keeps the bell setting too)
 
 # --- juice: floating numbers, hit flashes, nicer bars -------------------------------
 ft_add() {  # x y text style

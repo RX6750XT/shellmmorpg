@@ -450,17 +450,6 @@ render_log() {  # events on top, the last chat lines below
   done
 }
 
-render_input() {
-  local t=$CHAT_BUF w=$(( COLS - 12 )) l=$'\e['"$INPY;1H"
-  if (( CHATTING )); then
-    (( ${#t} > w )) && t=${t: -w}
-    l+=$' \e[1;38;5;51msay>'"$N $t"$'\e[5m_\e[0m'
-  else
-    t=" [wasd] move [1-3] skills [e/r] potions [u] eat [g] fish/gather [i]nv [x] talents [y] allies [p]rof [m]ap [q]uests [b]easts [c]hat log [H] collection [v] graphics [enter] chat [?] help"
-    l+="${K_SYS}${t:0:COLS-1}$N"
-  fi
-  emit inp "$l"$'\e[K'
-}
 
 # --- full-screen panels drawn inside the map frame ------------------------
 ui() { UIT+=("$1"); UIC+=("${2:-$K_CHAT}"); UIL+=(-1); }
@@ -645,34 +634,7 @@ ui_bestiary() {  # all hostile creatures sorted by level, in pages that fit the 
   else ui "  Quests tell you where each creature lives. [esc] close" "$K_SYS"; fi
 }
 
-ui_chatlog() {
-  local half i ne=${#LOG_T[@]} nc=${#CHL_T[@]}
-  half=$(( (VH - 4) / 2 ))
-  ui "  EVENTS" "$B"
-  for (( i = ne - half; i < ne; i++ )); do (( i >= 0 )) && ui "  ${LOG_T[i]}" "${LOG_C[i]}"; done
-  ui "  CHAT" "$B"
-  (( nc )) || ui "  nobody said anything yet - press [enter] to chat" "$K_SYS"
-  for (( i = nc - half; i < nc; i++ )); do (( i >= 0 )) && ui "  ${CHL_T[i]}" "${CHL_C[i]}"; done
-}
 
-ui_way() {
-  local i a cost=$(( 10 + LVL * 3 ))
-  ui "  WAYSTONE NETWORK" "$K_LOOT$B"
-  ui "  Travel to any attuned waystone for $cost gold. You have $GOLD gold."
-  ui ""
-  for i in "${!WAYSTONES[@]}"; do
-    a=(${WAYSTONES[i]})
-    if [[ ${WAYS:i:1} == 1 ]]; then
-      cheb $(( a[1] - PX )) $(( a[2] - PY ))
-      if (( D <= 3 )) && [[ $CUR_MAP == W ]]; then ui "  [$(( (i + 1) % 10 ))] ${EMJ[way]}${a[0]//_/ }   (you are here)" "$K_SYS"
-      else ui "  [$(( (i + 1) % 10 ))] ${EMJ[way]}${a[0]//_/ }"; fi
-    else
-      ui "  [ ] ??? - not attuned yet" "$K_SYS"
-    fi
-  done
-  ui ""
-  ui "  Walk past a waystone (&) once to attune it.   [esc] close" "$K_SYS"
-}
 
 HELP_PG=0
 ui_help() {  # two pages: [<] [>] turn
@@ -682,9 +644,10 @@ ui_help() {  # two pages: [<] [>] turn
   ui "  walk into an NPC to talk  -  f / space attack next to you"
   ui "  1 2 3 skills   e / r potions   u eat   i inventory   y allies"
   ui "  x talents  g fish / gather  p professions  m map  z ride  o achievements"
-  ui "  q quests, questlines, reputation  b bestiary  c chat log  H collection"
-  ui "  v graphics   Q quit   enter chat - /p party  /w name msg"
-  ui "  /invite /accept /leave /trade name /give name gold|#item /who /admin"
+  ui "  q quests, questlines, reputation  b bestiary  c log (scrolls)  H collection"
+  ui "  v graphics   Q quit (asks)   enter chat: ↑ last lines, tab names, ←→ edit"
+  ui "  /p party /w name msg /r reply /invite /accept /leave /trade /give /who /bell"
+  ui "  Long lists: PgUp PgDn scroll, ↑↓ + enter pick (crafting, waystones)"
   ui "  THE WORLD" "$B"
   ui "  Hearthmoor is the heart. South: desert (Oasis of Kadar), the Isles,"
   ui "  the Badlands. East: tundra, Ashen Wastes, Crystal Highlands, Jungle,"
@@ -872,7 +835,7 @@ ui_map() {
 
 render_ui() {   # panels use every column of the frame, the world map is drawn in ASCII
   local r t VW=$MW TW=1
-  UIT=() UIC=() UIL=()
+  UIT=() UIC=() UIL=() UI_FOCUS=-1
   for (( r = 0; r < VH; r++ )); do unset "SCR[m$r]"; done          # the map rows are covered now
   if [[ $UI == map ]]; then ui_map; return; fi
   case $UI in
@@ -885,6 +848,7 @@ render_ui() {   # panels use every column of the frame, the world map is drawn i
     inn) ui_inn ;; visit) ui_visit ;; dsp) ui_dsp ;; book) ui_book ;; guest) ui_guest ;;
   esac
   [[ -n $UI ]] || { MAP_DIRTY=1; return; }
+  ui_scroll                                                         # v7.1: taller than the window - scroll
   for (( r = 0; r < VH; r++ )); do
     if (( ${UIL[r]:--1} > VW )); then             # too wide for the frame: cut, keep the colors
       clipl "${UIT[r]}" "$VW"; out+=$'\e['"$(( r + 3 ));2H$N$CL"
@@ -929,23 +893,27 @@ render() {
 #  Input & main loop
 # ---------------------------------------------------------------------------
 handle_key() {
-  local k=$1 rest
+  local k=$1
   KEYD=1
+  if [[ $k == $'\e' ]]; then key_esc; k=$KEY; [[ -n $k ]] || return; fi     # v7.1: every special key has a name
   if (( CHATTING )); then
     chat_key "$k"
-    while (( CHATTING )) && read -t 0; do IFS= read -rsn1 k; chat_key "$k"; done
+    while (( CHATTING )) && read -t 0; do                                     # (pasted text: take it all at once)
+      IFS= read -rsn1 k
+      if [[ $k == $'\e' ]]; then key_esc; k=$KEY; [[ -n $k ]] || continue; fi
+      chat_key "$k"
+    done
+    MAP_DIRTY=1
     return
   fi
-  if [[ $k == $'\e' ]]; then
-    rest=""; read -rsn2 -t 0.01 rest
-    case $rest in
-      '[A'|OA) k=UP ;; '[B'|OB) k=DOWN ;; '[C'|OC) k=RIGHT ;; '[D'|OD) k=LEFT ;;
-      '') k=ESC ;;
-      *) read -rsn6 -t 0.01 rest; return ;;
-    esac
+  if (( QUIT_ASK )); then                                                     # v7.1: Q asks first
+    QUIT_ASK=0
+    [[ $k == [yYjJQ] ]] && exit 0
+    return
   fi
   if [[ -n $UI ]]; then
     MAP_DIRTY=1
+    if [[ $k == @(PGUP|PGDN|HOME|END) && $UI != @(chatlog|way|craft|map|inv|bank|trade) ]]; then ui_scroll_key "$k"; return; fi
     if [[ $UI == trade ]]; then trade_key "$k"; return; fi
     if [[ $UI == bank ]]; then bank_key "$k"; [[ -z $UI ]] && NEED_FULL=1; return; fi
     if [[ $UI == story ]]; then [[ $k == @(|$'\r'|' '|ESC|q) ]] && { UI="" NEED_FULL=1; }; return; fi
@@ -956,14 +924,14 @@ handle_key() {
       inv)   if [[ $k == i ]]; then inv_leave_tab; UI=""; else inv_key "$k"; fi ;;
       quest) quest_key "$k" ;;
       map)   wm_key "$k"; [[ -z $UI ]] && NEED_FULL=1 ;;
-      way)   [[ $k == [1-9] ]] && way_travel $(( k - 1 )); [[ $k == 0 ]] && way_travel 9 ;;
+      way)   way_key "$k" ;;
       help)  case $k in '?') UI="" ;; RIGHT|'>'|.|d|l|' ') (( HELP_PG < 3 )) && HELP_PG=$(( HELP_PG + 1 )) ;; LEFT|'<'|,|a|h) (( HELP_PG > 0 )) && HELP_PG=$(( HELP_PG - 1 )) ;; esac ;;
       beasts)  case $k in
                  b) UI="" ;;
                  RIGHT|'>'|.|d|l|' ') BEAST_PG=$(( BEAST_PG + 1 )) ;;
                  LEFT|'<'|,|a|h)      (( BEAST_PG > 0 )) && BEAST_PG=$(( BEAST_PG - 1 )) ;;
                esac ;;
-      chatlog) [[ $k == c ]] && UI="" ;;
+      chatlog) chatlog_key "$k" ;;
       prof)    [[ $k == p ]] && UI="" ;;
       craft)   craft_key "$k" ;;
       allies)  if [[ $k == y ]]; then UI=""; else aly_key "$k"; fi ;;
@@ -1002,7 +970,7 @@ handle_key() {
     m)         wm_open; UI=map MAP_DIRTY=1 ;;
     q)         UI=qlog MAP_DIRTY=1 ;;
     b)         UI=beasts MAP_DIRTY=1 ;;
-    c)         UI=chatlog MAP_DIRTY=1 ;;
+    c)         UI=chatlog CL_OFF=0 MAP_DIRTY=1 ;;
     n)         TAGS_ON=$(( ! TAGS_ON )) MAP_DIRTY=1 ;;
     v)         toggle_gfx ;;
     g)         gather_key ;;
@@ -1015,9 +983,9 @@ handle_key() {
     o)         UI=ach MAP_DIRTY=1 ;;
     H)         BOOK_PG=0 UI=book MAP_DIRTY=1 ;;
     '?')       UI=help MAP_DIRTY=1 ;;
-    ''|$'\r'|t) CHATTING=1 CHAT_BUF="" ;;
-    /)         CHATTING=1 CHAT_BUF="/" ;;
-    Q)         exit 0 ;;
+    ''|$'\r'|t) chat_open "" ;;
+    /)         chat_open "/" ;;
+    Q)         QUIT_ASK=1 ;;
   esac
 }
 

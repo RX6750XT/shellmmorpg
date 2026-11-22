@@ -44,19 +44,29 @@ when you walk; on a LAN you do not. Resizing your window works as usual.
 | `m` | world map (`+`/`-` zoom, arrows pan) |
 | `q` | quests and the story |
 | `b` | bestiary (`<` `>` turn pages) |
-| `c` | chat log |
+| `c` | the log: `1` chat, `2` events, `3` everything - with times; `↑↓` `PgUp` `PgDn` scroll, `Home` oldest, `End` newest, `enter` chat |
 | `H` | collection book (`<` `>` turn pages) |
 | `o` | achievements and titles |
 | `n` | name tags on/off |
 | `v` | HD emoji graphics ↔ classic ASCII |
 | `enter` / `t` | chat, `/` starts a command |
 | `?` | help |
-| `Q` | quit (saves) |
+| `Q` | quit (asks first; your hero is saved) |
+| `PgUp` `PgDn` `Home` `End` | scroll any list that is taller than your window |
+
+The chat line edits like a shell: `←` `→` `Home` `End` move, `Del` and
+backspace delete, `ctrl+w` deletes a word, `ctrl+u` / `ctrl+k` the start /
+the rest of the line, `↑` `↓` bring back what you said before, `Tab`
+completes a player's name (or a `/command`), `esc` cancels.
+At the forge, the alchemist's table, the campfire and a waystone: `↑` `↓`
+choose, `enter` does it (letters and numbers still work for the first ones).
 
 Chat commands: `/p text` party chat, `/w name text` whisper, `/invite name`,
 `/accept`, `/leave`, `/trade name`, `/give name 100` (gold) or
 `/give name #3` (bag item 3), `/symbol x`, `/color 5`, `/who`, `/me waves`,
-`/home` (hearthstone back to Hearthmoor, once a minute).
+`/home` (hearthstone back to Hearthmoor, once a minute), `/r text` answers
+the last whisper, `/bell` switches the beep (name, whispers, invites) off
+and on - it is remembered.
 
 **Admins** (v6.4) - for testing. The server decides who is an admin (when
 you host a world yourself, you are). `/admin help` lists the tools:

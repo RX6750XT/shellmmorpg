@@ -859,6 +859,7 @@ take_damage() {  # dmg source [mid] [element] [effect]
   (( DEAD )) && return
   [[ -n $3 ]] && (( M_KIND[${CM_T[$3]:-0}] > 0 )) && ATK_NPC[$3]=1     # fight back against angry NPCs
   [[ -n $3 ]] && ALY_LAST=$3
+  (( ADM_GOD )) && return                                                # v6.4: admin god mode
   if (( NOW < immune_until )); then logm "You evade $2's attack!" "$K_GOOD"; return; fi
   (( RIDING )) && { mount_off quiet; logm "You are thrown from your mount!" "$K_HURT"; }
   local a=$ARMOR d el=${4:-0} r=$RES tag=""
@@ -1317,7 +1318,8 @@ chat_submit() {
       list="$SYM $MY_NAME (${C_NAME[CLS]} $LVL)"
       for id in "${!OP_NAME[@]}"; do list+=", ${OP_SYM[$id]:-@} ${OP_NAME[$id]} (${C_NAME[${OP_CLS[$id]:-0}]} ${OP_LVL[$id]})"; done
       logm "Online: $list" ;;
-    /help)   logm "/p party  /w name msg  /invite /accept /leave  /trade name  /give name gold|#item  /symbol c  /color c  /who  /me  /home" ;;
+    /admin|"/admin "*) adm_cmd "${t#/admin}" ;;
+    /help)   logm "/p party  /w name msg  /invite /accept /leave  /trade name  /give name gold|#item  /symbol c  /color c  /who  /me  /home${IS_ADMIN/#1/  /admin}" ;;
     /*)      logm "Unknown command ${t%% *} - try /help" ;;
     *)       send CHAT "$MY_ID" "$MY_NAME" "$t"; chatm "$MY_NAME: $t" "$K_CHAT"; MY_SAY=$t MY_SAYT=$(( NOW + 5000 )) MAP_DIRTY=1 ;;
   esac
@@ -1371,6 +1373,8 @@ cli_srv() {  # typ fields...
                   OK)   acct_back ;;
                   DENY) if [[ $b == KICK ]]; then acct_kicked "$c"; else logm "The server refused the login: $c" "$K_HURT"; fi ;;
                   BAD) ACK_PEND=0; logm "The server did not accept your save: $b" "$K_HURT" ;;
+                  ADMIN) adm_flag "$b" ;;                               # v6.4: admin tools (04l_admin.sh)
+                  ADM)   adm_effect "$b" "$c" "$d" "$e" ;;
                 esac ;;
     MON)  [[ $a == "$CUR_MAP" ]] && num "$b" && num "$c" && num "$d" && num "$e" && num "$f" && num "$g" || return
           (( c < NM )) || return

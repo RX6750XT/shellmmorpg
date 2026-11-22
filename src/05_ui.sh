@@ -684,7 +684,7 @@ ui_help() {  # two pages: [<] [>] turn
   ui "  x talents  g fish / gather  p professions  m map  z ride  o achievements"
   ui "  q quests, questlines, reputation  b bestiary  c chat log  H collection"
   ui "  v graphics   Q quit   enter chat - /p party  /w name msg"
-  ui "  /invite /accept /leave /trade name /give name gold|#item /who"
+  ui "  /invite /accept /leave /trade name /give name gold|#item /who /admin"
   ui "  THE WORLD" "$B"
   ui "  Hearthmoor is the heart. South: desert (Oasis of Kadar), the Isles,"
   ui "  the Badlands. East: tundra, Ashen Wastes, Crystal Highlands, Jungle,"

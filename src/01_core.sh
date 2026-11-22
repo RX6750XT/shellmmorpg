@@ -9,6 +9,7 @@
 #  ./shellmmorpg.sh --bind ADDR         listen only on this address (127.0.0.1 behind ssh)
 #  ./shellmmorpg.sh --ssh [USER@]HOST   play on a server over ssh (see deploy/ and docs/SERVER.md)
 #  ./shellmmorpg.sh --name NAME         character name (default: $USER)
+#  ./shellmmorpg.sh --admin add|remove|list [NAME]   who is admin on this server
 #  ./shellmmorpg.sh --ascii / --hd      classic ASCII or HD emoji graphics ([v] in game)
 #  ./shellmmorpg.sh --help              this help
 #
@@ -34,7 +35,7 @@
 #  This file is built from src/*.sh and world.txt by build.sh - edit those.
 # ============================================================================
 
-VERSION="6.3"
+VERSION="6.4"
 DATA_DIR="${SHELLMMO_DIR:-$HOME/.shellmmorpg}"
 SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
 # string lengths must count characters, not bytes (emoji graphics): make sure we run in a UTF-8 locale
@@ -56,7 +57,7 @@ hub_handler() {   # socat backend: one process per client, relays via a shared l
   { tail -n0 -F "$log" 2>/dev/null | awk -F'|' -v mf="$mf" '
       function who() { if (me == "") { getline me < mf; close(mf) } return me }
       { t = $2
-        if (t == "ALOAD" || t == "ASAVE") { if (who() != "srv") next }
+        if (t == "ALOAD" || t == "ASAVE" || t == "ADM") { if (who() != "srv") next }
         else if (substr(t, 1, 2) == "AR" && length(t) == 8) { if (t != "AR" who()) next }
         print; fflush() }'; } &
   tp=$!
@@ -70,7 +71,7 @@ hub_handler() {   # socat backend: one process per client, relays via a shared l
     [[ -z $me && $f != srv ]] && { me=$f; printf '%s\n' "$me" > "$mf"; }
     [[ $f == "$me" ]] || continue
     case ${r%%|*} in
-      ALOAD|ASAVE) [[ $me == srv ]] && continue ;;
+      ALOAD|ASAVE|ADM) [[ $me == srv ]] && continue ;;
       AR??????) [[ $me == srv ]] || continue ;;
     esac
     printf '%s\n' "$line" >> "$log"
@@ -102,6 +103,8 @@ while (( $# )); do
       ssh_args=(); [[ -n $GFX ]] && ssh_args+=("--$GFX")
       exec ssh -t "${ssh_port[@]}" "$ssh_to" "${SHELLMMO_REMOTE:-shellmmorpg-play}" "${ssh_args[@]}" ;;
     --name) [[ -n $2 ]] || die "--name needs a value"; MY_NAME=$2; shift ;;
+    --admin) MODE=admin ADM_OP=$2 ADM_ARG=""; [[ -n $2 ]] && shift
+             if [[ $ADM_OP == @(add|remove) ]]; then ADM_ARG=$2; [[ -n $2 ]] && shift; fi ;;
     --ascii) GFX=ascii ;;
     --hd)    GFX=hd ;;
     *) die "unknown option '$1' (try --help)" ;;

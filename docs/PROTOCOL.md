@@ -118,6 +118,26 @@ afterwards `HELLO` and `POS` must carry the hero's name.
 | | `AUTH` | (server, v6.3) I do not know you (I restarted, or your session timed out): log in again with `keep` - at most every 5 s |
 | | `DENY` `PASS`\|`NAME`\|`ONLINE`\|`LOCK`\|`KICK` text | (server) no login: wrong password, bad name, the hero is being created or (for `keep`) playing elsewhere, five wrong passwords (a minute); `KICK` (v6.3): your hero logged in somewhere else with the right password - this session is over, do not save |
 
+## Admin tools (v6.4)
+
+The world server decides who is an admin (`$SHELLMMO_DIR/admins`, read for
+every command, plus the host's hero via `SHELLMMO_ADMIN_NAME`). `ADM` is
+private like `ALOAD`: the python3 and socat hubs deliver it to the world
+server only. Admin commands only work with logins on.
+
+| Type | Fields | Meaning |
+| --- | --- | --- |
+| `ADM` | command args | (player) an admin command; `command` is 1-10 lowercase letters, `args` one field, split on spaces by the server (at most 20 words, one command per 150 ms) |
+| `AR<id>` | `ADMIN` 0\|1 | (server) you are (not) an admin - `1` after a login as an admin (after the hero data), either on grant and revoke |
+| | `ADM` `say` text | (server) an answer for the admin's log |
+| | `ADM` `god` 0\|1 / `heal` / `tp` W x y / `level` n / `xp` n / `gold` n / `item` code | (server) an effect on your hero, ordered by an admin. Clients act on these only from `srv` - the hubs let nobody else send `AR<id>` |
+
+Commands (`/admin help`): `who` `admins` `grant` `revoke` `ann` `kick`
+`time` `weather` `wboss` `spawn` `kill` `tp` `goto` `summon` `god` `heal`
+`xp` `gold` `level` `item`. The server validates every argument (numbers,
+names, item codes, map bounds, a free tile to stand on) and logs
+`admin NAME: command args`. Creatures spawned by an admin do not respawn.
+
 ## Interest management (v6.3, python3 hub)
 
 In the open world (`W`) the hub forwards `MON` `MMOV` `MHP` `MATK` only to
@@ -182,7 +202,9 @@ travels as plain text: use ssh (see SERVER.md) outside a trusted network.
 What the server and hub do guarantee (python3 and socat hubs):
 
 - only the world server can send as `srv` - nobody can fake monsters, loot,
-  announcements or dungeon starts;
+  announcements, dungeon starts or admin effects;
+- admin commands are checked by the world server against its own list
+  (v6.4);
 - every connection is bound to the first sender id it uses - nobody can chat,
   trade, heal or quit in someone else's name;
 - input is validated before use; garbage, oversized lines and injection

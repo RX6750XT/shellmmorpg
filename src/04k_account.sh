@@ -128,7 +128,7 @@ acct_back() {
   [[ $CUR_MAP != W ]] && leave_instance quiet
   [[ -n $MY_PARTY ]] && { MY_PARTY="" PARTY_LEADER="" PARTY_IDS=(); pq_to_personal; }
   send HELLO "$MY_ID" "$MY_NAME" "$CLS" "$LVL"; send_pos; send SYNC "$MY_ID" W
-  ACK_PEND=0; save_char
+  ACK_PEND=0 ADM_GOD=0; save_char                     # (a new server forgot the god mode; it sends ADMIN again)
   logm "The world server is back - you are in the world again." "$K_GOOD"
 }
 acct_kicked() {  # our hero logged in somewhere else: stop at once, and do not save over the new session

@@ -15,6 +15,7 @@ if [[ $1 != quick ]]; then
       [[ $hub == python3 ]] || command -v "$hub" >/dev/null || continue
       SHELLMMO_HUB=$hub timeout 300 python3 tests/test_net.py || fails=$(( fails + 1 ))
       SHELLMMO_HUB=$hub timeout 300 python3 tests/test_acct.py || fails=$(( fails + 1 ))
+      SHELLMMO_HUB=$hub timeout 300 python3 tests/test_admin.py || fails=$(( fails + 1 ))
     done
     timeout 300 python3 tests/test_login.py || fails=$(( fails + 1 ))
     timeout 300 python3 tests/test_restart.py || fails=$(( fails + 1 ))

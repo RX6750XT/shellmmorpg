@@ -7,5 +7,6 @@ shopt -u patsub_replacement 2>/dev/null
 case $MODE in
   world)  server_main ;;
   server) dedicated_main ;;
+  admin)  adm_cli "$ADM_OP" "$ADM_ARG" ;;
   *)      client_main ;;
 esac

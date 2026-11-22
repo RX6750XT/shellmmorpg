@@ -879,6 +879,8 @@ srv_line() {
     QTALK)  isnum "$a" && [[ -n ${SP_PARTY[$from]} ]] && pq_progress "${SP_PARTY[$from]}" "T.$a" ;;
     DREQ)   srv_dreq "$from" "$a" "$b" ;;
     SYNC)   [[ $a =~ ^(W|D[0-9]+)$ ]] && { SYNC_PEND[$a]=1; sync_flush; } ;;
+    ADM)    [[ $a =~ ^[a-z]{1,10}$ ]] || return                 # v6.4: admin tools (03d_admin.sh)
+            local args=(); read -r -a args <<< "$b"; srv_adm "$from" "$a" "${args[@]:0:20}" ;;
   esac
 }
 

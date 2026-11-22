@@ -200,6 +200,7 @@ pst_clear() {  # [all|poison] cure
 stunned() { (( NOW < PS_UNTIL[4] )) && { (( NOW - ${STUN_MSG:-0} > 700 )) && { logm "You are stunned!" "$K_HURT"; STUN_MSG=$NOW; }; return 0; }; return 1; }
 die_now() {  # killer: shared by blows and damage over time
   (( DEAD )) && return
+  (( ADM_GOD )) && { HP=$MAXHP; return; }                  # v6.4: admin god mode
   if has_cap laststand && (( NOW >= LS_READY )); then
     HP=1 LS_READY=$(( NOW + 90000 )) immune_until=$(( NOW + 3000 ))
     logm "LAST STAND! You refuse to fall." "$K_GOOD"; return

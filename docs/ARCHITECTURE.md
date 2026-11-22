@@ -48,6 +48,8 @@ here-document and the start code:
 | `03_server.sh` | the world server: spawning, AI (timer wheel), combat on the server side, loot, parties, instances, world bosses, weather, clock, message handler |
 | `03b_server45.sh` | v4.5 server: mythic scaling (`inst_mon`, `myth_scale`), Bolstering, `myth_finish`; the raid boss (`raid_attack`, delayed area blows `aoe_add`/`aoe_tick`), `raid_finish`; invasions (`inv_*`); `srv_loot` |
 | `03c_accounts.sh` | v6.2 server side of heroes: `srv_aload` (login, new heroes, password check, lock-out, one session per hero), `srv_asave` (chunks, shape check, atomic write) |
+| `03d_admin.sh` | v6.4 admin tools, server side: the admins file (`adm_is`, `adm_set`, `adm_cli` for `--admin`), `srv_adm` (every `/admin` command: checks, logs, world commands, private effects) |
+| `04l_admin.sh` | v6.4 client side: `/admin` (`adm_cmd`), the admin flag (`adm_flag`), the effects the server sends (`adm_effect`: god mode, teleport, level, XP, gold, items, heal) |
 | `04k_account.sh` | v6.2 client side: `acct_login`, `acct_resume` (after a lost connection), `acct_send_save`, `acct_flush` (wait for the last save when quitting) |
 | `04_client.sh` | character, save/load, stats, combat, skills, items, shops, quests, NPC talk, party, and the network message handlers (`cli_line`, `cli_srv`) |
 | `04b_life.sh` | day/night and light, weather, world boss client side, fishing, gathering, crafting, trading |
@@ -212,11 +214,13 @@ to 12 KB (ASCII).
 | `<name>.char` | (before 6.2) a local hero; moved to the server on first login |
 | `shared.chest` | (before 6.2) the chest shared by the heroes on this computer |
 | `config` | graphics mode (`GFX=hd` / `ascii`) |
+| `admins` | (v6.4) the heroes that are admins on this server, one name per line |
 | `server.log` | the world server's log when hosting |
 
 Environment knobs: `SHELLMMO_DIR`, `SHELLMMO_NAME`, `SHELLMMO_GFX`,
 `SHELLMMO_HUB` (python3/socat/ncat), `SHELLMMO_DEBUG` (frame time),
-`SHELLMMO_MAX_INST` (dungeon instances, default 40), `SHELLMMO_PASS` (the
+`SHELLMMO_MAX_INST` (dungeon instances, default 40), `SHELLMMO_ADMIN_NAME`
+(set by a host for its world server: that hero is an admin), `SHELLMMO_PASS` (the
 hero's password, skips the prompt), and for tests `SHELLMMO_OPEN=1` (a server
 without logins),
 `SHELLMMO_LIB`, `SHELLMMO_WB_DELAY`, `SHELLMMO_CLOCK`, `SHELLMMO_WEATHER_DELAY`.

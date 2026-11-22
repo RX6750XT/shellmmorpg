@@ -57,6 +57,14 @@ Chat commands: `/p text` party chat, `/w name text` whisper, `/invite name`,
 `/give name #3` (bag item 3), `/symbol x`, `/color 5`, `/who`, `/me waves`,
 `/home` (hearthstone back to Hearthmoor, once a minute).
 
+**Admins** (v6.4) - for testing. The server decides who is an admin (when
+you host a world yourself, you are). `/admin help` lists the tools:
+`/admin god`, `heal`, `level 30`, `xp 5000`, `gold 1000`, `item W.6.12.3`
+(each also `... NAME` for somebody else), `tp X Y`, `goto NAME`,
+`summon NAME`, `where`, `spawn wolf 5`, `kill 10`, `wboss`, `time 22:00`,
+`weather Silverlake storm`, `ann text`, `who`, `admins`, `kick NAME`,
+`grant NAME`, `revoke NAME`. Every command is written to the server's log.
+
 ## Classes
 
 | Class | Plays like | Skills |

@@ -66,7 +66,7 @@ acc_kick() {  # name new-id: end every other session of that hero
   done
 }
 
-acc_forget() { unset "ACC_NAME[$1]" "ACC_NEW[$1]" "ACC_PASS[$1]" "ACC_BUF[$1]" "ACC_NS[$1]" "ACC_SEEN[$1]" "ACC_RATE[$1]" "ACC_SVN[$1]" "ACC_SVT[$1]"; }
+acc_forget() { unset "ADM_GOD[$1]" "ADM_RATE[$1]" "ACC_NAME[$1]" "ACC_NEW[$1]" "ACC_PASS[$1]" "ACC_BUF[$1]" "ACC_NS[$1]" "ACC_SEEN[$1]" "ACC_RATE[$1]" "ACC_SVN[$1]" "ACC_SVT[$1]"; }
 
 srv_aload() {  # id name password [keep]
   local id=$1 name=$2 pw=$3 keep=$4 key salt hsh nm n total i txt chunk
@@ -96,19 +96,19 @@ srv_aload() {  # id name password [keep]
     fi
     ACC_NAME[$id]=$name; unset "ACC_NEW[$id]" "ACC_PASS[$id]"
     slog "login: $name ($id)"
-    if [[ $keep == keep ]]; then acc_reply "$id" OK; return; fi
+    if [[ $keep == keep ]]; then acc_reply "$id" OK; adm_status "$id"; return; fi
     if [[ -r $ACC_DIR/$key.char ]]; then
       txt=$(<"$ACC_DIR/$key.char"); txt=${txt//$'\n'/$US}
       total=$(( (${#txt} + ACC_CHUNK - 1) / ACC_CHUNK ))
       for (( n = 1; n <= total; n++ )); do acc_reply "$id" DATA "$n" "$total" "${txt:(n-1)*ACC_CHUNK:ACC_CHUNK}"; done
-      return
+      adm_status "$id"; return                    # (v6.4: after the hero - the client reads the login answer first)
     fi
     ACC_NEW[$id]=0                               # the password exists but the hero never got saved: create it
-    acc_reply "$id" NONE; return
+    acc_reply "$id" NONE; adm_status "$id"; return
   fi
   ACC_NAME[$id]=$name ACC_NEW[$id]=1 ACC_PASS[$id]=$pw
   slog "new hero: $name ($id)"
-  acc_reply "$id" NONE
+  acc_reply "$id" NONE; adm_status "$id"
 }
 
 srv_asave() {  # id n total chunk

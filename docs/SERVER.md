@@ -32,6 +32,24 @@ Match Group shellmmo-players
     X11Forwarding no
 ```
 
+## Admins
+
+The server decides who is an admin (v6.4): the heroes listed in
+`/var/lib/shellmmorpg/admins`, one name per line. Edit it with
+
+```bash
+sudo -u shellmmo SHELLMMO_DIR=/var/lib/shellmmorpg /opt/shellmmorpg/shellmmorpg.sh --admin add NAME
+sudo -u shellmmo SHELLMMO_DIR=/var/lib/shellmmorpg /opt/shellmmorpg/shellmmorpg.sh --admin remove NAME
+sudo -u shellmmo SHELLMMO_DIR=/var/lib/shellmmorpg /opt/shellmmorpg/shellmmorpg.sh --admin list
+```
+
+The running server reads the file for every command - no restart needed.
+Admins can also `/admin grant NAME` and `/admin revoke NAME` in the game.
+Every admin command lands in the server's log (`journalctl -u shellmmorpg`,
+lines `admin NAME: ...`). When a player hosts a world with plain
+`./shellmmorpg.sh`, their own hero is an admin there; the list lives in
+`~/.shellmmorpg/admins`.
+
 ## Play
 
 ```bash

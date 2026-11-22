@@ -136,10 +136,10 @@ async def handle(reader, writer):
             if frm != me:
                 continue
             ids[writer] = me
-            # private lines: ALOAD/ASAVE (hero data, passwords) go to the world server only,
+            # private lines: ALOAD/ASAVE (hero data, passwords) and ADM (admin commands) go to the world server only,
             # AR<id> (the server's answer) to that one player only
             typ = p[1]
-            if typ in (b"ALOAD", b"ASAVE"):
+            if typ in (b"ALOAD", b"ASAVE", b"ADM"):
                 if me == b"srv":
                     continue
                 dest = [c for c in clients if ids.get(c) == b"srv"]
@@ -239,7 +239,7 @@ start_world_server() {
   local run=()
   command -v setsid >/dev/null 2>&1 && run=(setsid)
   mkdir -p "$DATA_DIR"
-  "${run[@]}" bash "$SELF" --world-server "$NET_PORT" </dev/null >>"$DATA_DIR/server.log" 2>&1 &
+  SHELLMMO_ADMIN_NAME=$MY_NAME "${run[@]}" bash "$SELF" --world-server "$NET_PORT" </dev/null >>"$DATA_DIR/server.log" 2>&1 &
   WS_PID=$!
   disown "$WS_PID" 2>/dev/null           # (no "Killed" notice from bash on top of the game if it dies)
 }

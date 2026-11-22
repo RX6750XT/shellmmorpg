@@ -1,5 +1,30 @@
 # Changelog
 
+## 6.4 - admin tools
+
+**Admins, decided by the server**
+- The world server keeps the list of admins: `$SHELLMMO_DIR/admins`, one
+  hero name per line (`/var/lib/shellmmorpg/admins` on a deployed server).
+  It is read for every command, so changes count at once - no restart.
+- `./shellmmorpg.sh --admin add NAME` / `remove NAME` / `list` edits the
+  list (run it as the server's user, with the server's `SHELLMMO_DIR`).
+- When you host a world yourself, your own hero is an admin there.
+- Admins can make others admins in the game: `/admin grant NAME`,
+  `/admin revoke NAME`.
+- A client never grants itself anything: the server checks every command,
+  writes it to its log and sends what it does to a hero as a private line
+  (`AR<id> ADM ...`) that only the world server can send.
+
+**The tools** (`/admin help` in the game)
+- heroes: `god` (no damage, no death), `heal`, `level N`, `xp N`, `gold N`,
+  `item CODE` - for yourself or `[NAME]`
+- moving: `tp X Y`, `goto NAME`, `summon NAME`, `where`
+- the world: `spawn CREATURE [N]` (number or part of a name), `kill
+  [RADIUS]`, `wboss` (a world boss now), `time HH:MM`, `weather REGION
+  KIND`, `ann TEXT`
+- people: `who` (everybody's map and position), `admins`, `kick NAME`
+- New tests: `test_admin.py` (a real server, once per hub), `test_v64.sh`.
+
 ## 6.3 - stability and smoother multiplayer
 
 **Multiplayer scales**

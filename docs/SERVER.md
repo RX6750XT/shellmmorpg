@@ -29,6 +29,20 @@ Without systemd: `sudo -u shellmmo /opt/shellmmorpg/shellmmorpg.sh --server 4747
 
 Back up `/var/lib/shellmmorpg/chars/` - that is all the state there is.
 
+### Update
+
+```bash
+cd shellmmorpg && sudo deploy/update.sh     # --no-pull: install what is checked out; --yes: don't ask
+```
+
+A `git pull` alone changes nothing on the server: the game runs from
+`/opt/shellmmorpg`, and the running service keeps the old version until it
+restarts. `update.sh` pulls, backs up the heroes to
+`/var/lib/shellmmorpg/backups/`, runs `install.sh` again with the port and
+open account already in use (that copies the game and restarts the service)
+and checks that the new version is live. Players online get disconnected
+(it asks first).
+
 ### The open account (v7.2)
 
 `install.sh` also creates the open ssh account `play` (`--guest NAME` for

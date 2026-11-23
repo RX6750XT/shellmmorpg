@@ -1,5 +1,26 @@
 # Changelog
 
+## 8.1 - safer on a public server
+
+- **Passwords are stored as PBKDF2-SHA256** (200,000 rounds,
+  `SHELLMMO_PBKDF2_ITER`) with a salt from `/dev/urandom` instead of one
+  salted sha256 with a salt from `$RANDOM`. Older heroes log in as before
+  and move to the new hash at their next login. The password goes to
+  python3 through a pipe, never on a command line.
+- **New heroes need a password of at least 8 characters** (older heroes
+  keep their shorter ones).
+- **Lock-outs grow**: five wrong passwords still lock a hero for a minute,
+  every lock-out in a row lasts twice as long, at most 30 minutes. The
+  right password starts over.
+- **At most 5 password checks a second** on the whole server: a flood of
+  logins gets "busy" (the game tries again by itself) and never stalls the
+  world.
+- **At most 4 games from one address** (`SHELLMMO_MAX_PER_IP`, 0: no limit):
+  `--join` sends the address from `SSH_CONNECTION` to the gate.
+- `deploy/update.sh`: pull, back up the heroes, reinstall with the same
+  port and open account, restart, check the version.
+- docs/SERVER.md: running on a public server.
+
 ## 8.0 - Beyond the Edge
 
 **Level 50**

@@ -36,7 +36,7 @@
 #  This file is built from src/*.sh and world.txt by build.sh - edit those.
 # ============================================================================
 
-VERSION="8.0"
+VERSION="8.1"
 DATA_DIR="${SHELLMMO_DIR:-$HOME/.shellmmorpg}"
 SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
 # string lengths must count characters, not bytes (emoji graphics): make sure we run in a UTF-8 locale
@@ -109,7 +109,9 @@ term_main() {  # connect to the gate, then only send keys and show what comes ba
   term_size
   local hn=$MY_NAME
   [[ -n $ASK_NAME ]] && { hn="?"; [[ -n $NAME_SET ]] && hn+=$MY_NAME; }   # v7.2: "?" = the game asks who you are
-  printf 'SMT1|%s|%s|%s|%s\n' "$hn" "$TCOLS" "$TROWS" "${GFX:--}" >&3
+  local from=${SSH_CONNECTION%% *}                 # v8.1: where the player comes from (set by sshd): the gate limits games per address
+  [[ $from =~ ^[0-9A-Fa-f.:]{2,45}$ ]] || from=-
+  printf 'SMT1|%s|%s|%s|%s|%s\n' "$hn" "$TCOLS" "$TROWS" "${GFX:--}" "$from" >&3
   IFS= read -r -t 10 -u 3 line || die "$NET_HOST:$NET_PORT does not answer like a shellmmorpg 7 server"
   line=${line%$'\r'}
   [[ $line == SMT1\|NO\|* ]] && die "${line#SMT1|NO|}"
@@ -3088,14 +3090,16 @@ read -r -d '' PY_HUB <<'PY'
 # The gate and the hub (v7.0). Hub: a connection is bound to the id it proves with AUTH - the world
 # server ("srv", SHELLMMO_HUB_TOKEN) or a game session the gate started (its player id,
 # SHELLMMO_SESS_TOKEN); everything from a connection that did not prove itself is dropped.
-# Gate: SMT1|name|cols|rows|gfx, then a pty with "bash GAME --session" for that player; bytes go
+# Gate: SMT1|name|cols|rows|gfx[|from], then a pty with "bash GAME --session" for that player; bytes go
 # both ways, an in-band ESC ] 5379 ; rows ; cols BEL resizes the terminal.
 import asyncio, fcntl, os, re, signal, struct, subprocess, sys, termios
 TOKEN = os.environ.get("SHELLMMO_HUB_TOKEN", "").encode()
 STOKEN = os.environ.get("SHELLMMO_SESS_TOKEN", "").encode()
 MAXBUF = 1 << 20
 MAXSESS = int(os.environ.get("SHELLMMO_MAX_PLAYERS", "32") or 32)
+MAXPERIP = int(os.environ.get("SHELLMMO_MAX_PER_IP", "4") or 4)     # v8.1: games at a time from one address (0: no limit)
 sessions = set()
+origin = {}       # game process -> the address its player came from (SSH_CONNECTION, sent by --join)
 clients = set()
 ids = {}          # writer -> bound sender id (b"srv" for the world server)
 # --- interest management (v6.3): in the open world a player only gets the monsters near them -------
@@ -3285,11 +3289,14 @@ async def gate(reader, writer):
             hs = await asyncio.wait_for(reader.readline(), 15)
         except Exception:
             return
-        m = re.fullmatch(rb"SMT1\|(\?[A-Za-z0-9_-]{0,12}|[A-Za-z0-9_-]{1,12})\|(\d{1,3})\|(\d{1,3})\|(hd|ascii|-)\r?\n", hs)
+        m = re.fullmatch(rb"SMT1\|(\?[A-Za-z0-9_-]{0,12}|[A-Za-z0-9_-]{1,12})\|(\d{1,3})\|(\d{1,3})\|(hd|ascii|-)(?:\|([0-9A-Fa-f.:]{2,45}|-))?\r?\n", hs)
         if not m:
             writer.write(b"SMT1|NO|This is a shellmmorpg 7 server - play over ssh (./shellmmorpg.sh --ssh user@host).\n"); return
         if len(sessions) >= MAXSESS:
             writer.write(b"SMT1|NO|The server is full.\n"); return
+        src = m.group(5) if m.group(5) not in (None, b"-") else None
+        if src is not None and MAXPERIP > 0 and sum(1 for a in origin.values() if a == src) >= MAXPERIP:
+            writer.write(b"SMT1|NO|Too many games from your address (at most %d).\n" % MAXPERIP); return
         name, rows, cols, gfx = m.group(1).decode(), int(m.group(3)), int(m.group(2)), m.group(4).decode()
         env = {k: os.environ[k] for k in ENV_KEEP if k in os.environ}
         env.update(TERM="xterm-256color", SHELLMMO_NAME=name.lstrip("?"))
@@ -3304,6 +3311,8 @@ async def gate(reader, writer):
         os.close(slave)
         os.set_blocking(master, False)
         sessions.add(proc)
+        if src is not None:
+            origin[proc] = src
         writer.write(b"SMT1|OK\n")
         done = asyncio.Event()
         def from_game():
@@ -3369,6 +3378,7 @@ async def gate(reader, writer):
                 pass
             proc.wait()
             sessions.discard(proc)
+            origin.pop(proc, None)
         if master is not None:
             try:
                 loop.remove_reader(master)
@@ -4635,8 +4645,15 @@ inv_end() { INV_TOWN=-1 INV_WAVE=0 INV_MONS="" INV_NEXT=$(( NOW + ${SHELLMMO_INV
 #  The hub delivers ALOAD/ASAVE to the world server only and AR<id> to the
 #  player <id> only.
 # ---------------------------------------------------------------------------
+#  v8.1: passwords are stored as PBKDF2-SHA256 (python3, salt from /dev/urandom):
+#  "pbkdf2-sha256:ITERATIONS:SALT HASH Name" in <name>.pw. Older files ("SALT HASH Name",
+#  one sha256) still log in and are rewritten with the new hash on the next login.
+#  New heroes need 8 characters (older heroes keep their shorter passwords); wrong
+#  passwords lock a hero for 1, 2, 4 ... at most 30 minutes.
 ACC_DIR="$DATA_DIR/chars" ACCT_ON=0 ACC_HASHER="" ACC_CHUNK=1400 ACC_MAXCH=60 ACC_STALE=8000
-declare -A ACC_NAME=() ACC_NEW=() ACC_PASS=() ACC_BUF=() ACC_NS=() ACC_SEEN=() ACC_FAIL=() ACC_LOCK=() ACC_RATE=() ACC_SVN=() ACC_SVT=()
+ACC_KDF=0 ACC_ITER=${SHELLMMO_PBKDF2_ITER:-200000} ACC_MINNEW=8 ACC_HW=0 ACC_HN=0
+[[ $ACC_ITER =~ ^[1-9][0-9]{0,7}$ ]] || ACC_ITER=200000
+declare -A ACC_NAME=() ACC_NEW=() ACC_PASS=() ACC_BUF=() ACC_NS=() ACC_SEEN=() ACC_FAIL=() ACC_LOCK=() ACC_RATE=() ACC_SVN=() ACC_SVT=() ACC_LOCKS=()
 US=$'\x1f'
 
 acc_init() {
@@ -4644,11 +4661,35 @@ acc_init() {
   if command -v sha256sum >/dev/null 2>&1; then ACC_HASHER="sha256sum"
   elif command -v shasum >/dev/null 2>&1; then ACC_HASHER="shasum -a 256"
   else ACC_HASHER="cksum"; fi
+  ACC_KDF=0
+  if command -v python3 >/dev/null 2>&1; then          # (the gate needs python3 anyway)
+    acc_kdf 00 x 1 && [[ $AH =~ ^[0-9a-f]{64}$ ]] && ACC_KDF=1
+  fi
+  (( ACC_KDF )) || slog "! no python3 for PBKDF2 - passwords are stored as one salted sha256"
 }
 
-acc_hash() {  # salt password -> AH
+acc_kdf() {  # salt(hex) password iterations -> AH (the password goes through stdin, never the command line)
+  AH=$(printf '%s' "$2" | python3 -I -c 'import hashlib, sys
+print(hashlib.pbkdf2_hmac("sha256", sys.stdin.buffer.read(), bytes.fromhex(sys.argv[1]), int(sys.argv[2])).hex())' "$1" "$3" 2>/dev/null)
+  [[ -n $AH ]] || { AH=none; return 1; }
+}
+
+acc_hash() {  # stored-salt password -> AH (the salt field says how: "pbkdf2-sha256:ITER:SALT" or an old plain salt)
+  if [[ $1 =~ ^pbkdf2-sha256:([0-9]{1,8}):([0-9a-f]{16,64})$ ]]; then
+    acc_kdf "${BASH_REMATCH[2]}" "$2" "${BASH_REMATCH[1]}" || AH=none
+    return
+  fi
   AH=$(printf '%s:%s' "$1" "$2" | $ACC_HASHER 2>/dev/null); AH=${AH%% *}
   [[ -n $AH ]] || AH=none
+}
+
+acc_store_pw() {  # key name password: writes <key>.pw with a fresh salt (PBKDF2 if python3 is there)
+  local salt
+  new_token; salt=$TOK
+  if (( ACC_KDF )); then salt="pbkdf2-sha256:$ACC_ITER:$salt"; fi
+  acc_hash "$salt" "$3"
+  [[ $AH != none ]] || return 1
+  printf '%s %s %s\n' "$salt" "$AH" "$2" > "$ACC_DIR/$1.pw.tmp" && chmod 600 "$ACC_DIR/$1.pw.tmp" && mv -f "$ACC_DIR/$1.pw.tmp" "$ACC_DIR/$1.pw"
 }
 
 valid_pass() { local LC_ALL=C; [[ ${#1} -ge 4 && ${#1} -le 32 && $1 != *[^\ -{}-~]* ]]; }   # printable ASCII, no |
@@ -4703,18 +4744,30 @@ srv_aload() {  # id name password [keep]
   key=${name,,}
   (( NOW - ${ACC_RATE[$id]:-0} >= 700 )) || { acc_reply "$id" DENY LOCK "Slow down."; return; }
   ACC_RATE[$id]=$NOW
-  (( NOW >= ${ACC_LOCK[$key]:-0} )) || { acc_reply "$id" DENY LOCK "Too many wrong passwords - try again in a minute."; return; }
+  if (( NOW < ${ACC_LOCK[$key]:-0} )); then
+    acc_reply "$id" DENY LOCK "Too many wrong passwords - try again in $(( (ACC_LOCK[$key] - NOW + 59999) / 60000 )) minute(s)."; return
+  fi
   if [[ ! -r $ACC_DIR/$key.pw ]] && acc_online "$name" "$id"; then acc_reply "$id" DENY ONLINE "Somebody is creating $name right now."; return; fi
   ACC_SEEN[$id]=$NOW
   if [[ -r $ACC_DIR/$key.pw ]]; then
+    (( NOW - ACC_HW >= 1000 )) && ACC_HW=$NOW ACC_HN=0     # v8.1: a hash costs the server ~50 ms - at most 5 a second
+    (( ++ACC_HN <= 5 )) || { acc_reply "$id" DENY BUSY "The server is busy - one moment."; return; }
     read -r salt hsh nm < "$ACC_DIR/$key.pw"
     acc_hash "$salt" "$pw"
     if [[ $AH != "$hsh" ]]; then
       ACC_FAIL[$key]=$(( ${ACC_FAIL[$key]:-0} + 1 ))
-      (( ACC_FAIL[$key] >= 5 )) && { ACC_LOCK[$key]=$(( NOW + 60000 )) ACC_FAIL[$key]=0; slog "! too many wrong passwords for $name ($id)"; }
+      if (( ACC_FAIL[$key] >= 5 )); then              # v8.1: every lock-out in a row lasts twice as long (1, 2, 4 ... 30 min)
+        n=${ACC_LOCKS[$key]:-0}; (( n < 5 )) && ACC_LOCKS[$key]=$(( n + 1 ))
+        n=$(( 60000 << n )); (( n > 1800000 )) && n=1800000
+        ACC_LOCK[$key]=$(( NOW + n )) ACC_FAIL[$key]=0
+        slog "! too many wrong passwords for $name ($id) - locked for $(( n / 60000 )) min"
+      fi
       acc_reply "$id" DENY PASS "Wrong password."; return
     fi
-    ACC_FAIL[$key]=0
+    unset "ACC_FAIL[$key]" "ACC_LOCKS[$key]"
+    if (( ACC_KDF )) && [[ $salt != pbkdf2-sha256:"$ACC_ITER":* && $nm == "$name" ]]; then   # an old hash: store the new kind now
+      acc_store_pw "$key" "$nm" "$pw" && slog "password of $name moved to pbkdf2"
+    fi
     [[ $nm == "$name" ]] || { acc_reply "$id" DENY NAME "That hero is called $nm."; return; }
     if acc_online "$name" "$id"; then                # v6.3: the right password takes the hero over (quit and came straight back,
       if [[ $keep == keep ]]; then                    # or a session hanging somewhere) - but a reconnect never kicks anybody
@@ -4734,13 +4787,14 @@ srv_aload() {  # id name password [keep]
     ACC_NEW[$id]=0                               # the password exists but the hero never got saved: create it
     acc_reply "$id" NONE; adm_status "$id"; return
   fi
+  if (( ${#pw} < ACC_MINNEW )); then acc_reply "$id" DENY PASS "A new hero needs a password of $ACC_MINNEW-32 characters."; return; fi
   ACC_NAME[$id]=$name ACC_NEW[$id]=1 ACC_PASS[$id]=$pw
   slog "new hero: $name ($id)"
   acc_reply "$id" NONE; adm_status "$id"
 }
 
 srv_asave() {  # id n total chunk
-  local id=$1 n=$2 total=$3 chunk=$4 key text salt tmp
+  local id=$1 n=$2 total=$3 chunk=$4 key text tmp
   [[ -n ${ACC_NAME[$id]} ]] || return
   isnum "$n" && isnum "$total" && (( n >= 1 && n <= total && total <= ACC_MAXCH && ${#chunk} <= ACC_CHUNK + 20 )) || return
   local LC_ALL=C
@@ -4756,9 +4810,7 @@ srv_asave() {  # id n total chunk
   acc_valid_text "$text" || { acc_reply "$id" BAD "not a hero"; slog "! bad save from ${ACC_NAME[$id]} ($id)"; return; }
   key=${ACC_NAME[$id],,}
   if [[ -n ${ACC_NEW[$id]} && ! -r $ACC_DIR/$key.pw ]]; then
-    printf -v salt '%04x%04x%04x' $RANDOM $RANDOM $RANDOM
-    acc_hash "$salt" "${ACC_PASS[$id]}"
-    printf '%s %s %s\n' "$salt" "$AH" "${ACC_NAME[$id]}" > "$ACC_DIR/$key.pw.tmp" && mv -f "$ACC_DIR/$key.pw.tmp" "$ACC_DIR/$key.pw" && chmod 600 "$ACC_DIR/$key.pw"
+    acc_store_pw "$key" "${ACC_NAME[$id]}" "${ACC_PASS[$id]}"
   fi
   [[ -r $ACC_DIR/$key.pw ]] || { acc_reply "$id" BAD "no such hero"; return; }
   unset "ACC_NEW[$id]" "ACC_PASS[$id]"
@@ -12445,6 +12497,7 @@ acct_login() {  # talks to the world server: loads the hero into CHAR_TEXT ("" =
         CHAR_TEXT=${txt//$US/$'\n'}
         return 0 ;;
       DENY)
+        if [[ $AR_A == BUSY ]] && (( ++again < 10 )); then sleep 1; continue; fi   # v8.1: the server hashes 5 passwords a second
         echo "Login refused: $AR_B" >&2
         if [[ $AR_A == PASS && -z $SHELLMMO_PASS ]] && (( ++tries < 3 )); then ACC_PASS=""; continue; fi
         if [[ -n $ASK_NAME ]]; then                     # v7.2: back to "who are you?" instead of ending the session
@@ -12462,8 +12515,13 @@ acct_login() {  # talks to the world server: loads the hero into CHAR_TEXT ("" =
 }
 
 acct_resume() {  # after a lost connection: log in again without loading, then store what happened meanwhile
-  send ALOAD "$MY_ID" "$MY_NAME" "$ACC_PASS" keep
-  if acct_wait 5000 && [[ $AR_K == OK ]]; then return 0; fi
+  local i
+  for (( i = 0; i < 5; i++ )); do                  # v8.1: BUSY - the server checks 5 passwords a second
+    send ALOAD "$MY_ID" "$MY_NAME" "$ACC_PASS" keep
+    if acct_wait 5000 && [[ $AR_K == OK ]]; then return 0; fi
+    [[ $AR_K == DENY && $AR_A == BUSY ]] || break
+    sleep 1
+  done
   [[ $AR_K == DENY ]] && logm "Could not log in again: $AR_B" "$K_HURT"
   net_up=0; exec 7>&- 2>/dev/null
   return 1

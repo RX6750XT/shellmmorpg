@@ -80,10 +80,42 @@ What a player sees:
   `There is no hero called ron yet. Create ron? [y/n]` -> `y` -> the
   password again -> class and look -> in the world.
 
-The heroes' passwords protect them (5 wrong ones lock a hero for a minute);
-everybody who can reach your sshd can make heroes, at most 32 play at a
-time (`SHELLMMO_MAX_PLAYERS`). `./shellmmorpg.sh --ssh play@host [--name sid]`
+The heroes' passwords protect them (at least 8 characters for a new hero;
+5 wrong ones lock a hero for a minute, every lock-out in a row twice as
+long, at most 30 minutes); everybody who can reach your sshd can make
+heroes, at most 32 play at a time (`SHELLMMO_MAX_PLAYERS`), at most 4 from
+one address (`SHELLMMO_MAX_PER_IP`). `./shellmmorpg.sh --ssh play@host [--name sid]`
 works too (only `--hd`, `--ascii` and `--name` are passed on).
+
+### On a public server
+
+An open account on the internet is found by scanners within hours. The
+game limits what they can do (4 games per address, 32 in all, 5 password
+checks a second, lock-outs), but the machine is yours to harden:
+
+- **a machine of its own** (a small VPS or VM) - not the one with your other things;
+- **keys only for every other account**, in `/etc/ssh/sshd_config`
+  (before any `Match` block - the rules for `play` stay):
+  ```
+  PermitRootLogin no
+  PasswordAuthentication no
+  KbdInteractiveAuthentication no
+  MaxStartups 10:30:60
+  PerSourcePenalties yes        # OpenSSH 9.8+: slows down addresses that misbehave
+  ```
+- **back up `/var/lib/shellmmorpg/chars/` regularly** (a cron job; `update.sh`
+  makes one before every update);
+- limits live in the service: `systemctl edit shellmmorpg` and
+  `Environment=SHELLMMO_MAX_PLAYERS=32 SHELLMMO_MAX_PER_IP=4`.
+
+Passwords are stored as PBKDF2-SHA256 (v8.1, 200,000 rounds; heroes from
+older versions move over at their next login). The server only ever checks
+5 a second, so a flood of logins slows logins down, never the world.
+Locking out is per hero: somebody who keeps guessing a hero's password
+also keeps its owner out (at most 30 minutes at a time).
+
+Safer still is no open account at all: `sudo deploy/install.sh --no-guest`
+and an ssh login with a key for every player (below).
 
 ### Players with a login of their own
 

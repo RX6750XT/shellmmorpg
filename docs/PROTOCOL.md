@@ -112,7 +112,7 @@ afterwards `HELLO` and `POS` must carry the hero's name.
 
 | Type | Fields | Meaning |
 | --- | --- | --- |
-| `ALOAD` | name password [`keep`] | log in as `name` (4-32 printable characters, no `\|`). `keep`: only log in again after a lost connection, do not send the hero |
+| `ALOAD` | name password [`keep`] | log in as `name` (4-32 printable characters, no `\|`; v8.1: a new hero needs 8). `keep`: only log in again after a lost connection, do not send the hero |
 | `ASAVE` | n total chunk | the hero's save text, chunk `n` of `total` (at most 60 of 1400 characters; newlines are written as the unit separator `\x1f`) |
 | `AR<id>` | `NONE` | (server) this name is free: a new hero is created by the first `ASAVE` |
 | | `DATA` n total chunk | (server) the saved hero, in order |
@@ -120,7 +120,7 @@ afterwards `HELLO` and `POS` must carry the hero's name.
 | | `ACK` | (server) the save is stored |
 | | `BAD` text | (server) the save was refused (not a hero, too many saves) |
 | | `AUTH` | (server, v6.3) I do not know you (I restarted, or your session timed out): log in again with `keep` - at most every 5 s |
-| | `DENY` `PASS`\|`NAME`\|`ONLINE`\|`LOCK`\|`KICK` text | (server) no login: wrong password, bad name, the hero is being created or (for `keep`) playing elsewhere, five wrong passwords (a minute); `KICK` (v6.3): your hero logged in somewhere else with the right password - this session is over, do not save |
+| | `DENY` `PASS`\|`NAME`\|`ONLINE`\|`LOCK`\|`KICK`\|`BUSY` text | (server) no login: wrong password (or, v8.1, too short for a new hero), bad name, the hero is being created or (for `keep`) playing elsewhere, five wrong passwords (a minute; v8.1: every lock-out in a row twice as long, at most 30 minutes); `BUSY` (v8.1): the server checks at most 5 passwords a second - try again in a second; `KICK` (v6.3): your hero logged in somewhere else with the right password - this session is over, do not save |
 
 ## Admin tools (v6.4)
 
@@ -176,8 +176,14 @@ that started it is gone.
 terminal (`--join`) that connects here and sends one line:
 
 ```
-SMT1|name|cols|rows|gfx            name 1-12 of A-Z a-z 0-9 _ -, cols/rows 1-3 digits, gfx hd|ascii|-
+SMT1|name|cols|rows|gfx[|from]     name 1-12 of A-Z a-z 0-9 _ -, cols/rows 1-3 digits, gfx hd|ascii|-
 ```
+
+`from` (v8.1) is the player's address, the first word of `SSH_CONNECTION`
+(set by sshd), or `-`. At most `SHELLMMO_MAX_PER_IP` (default 4, 0: no
+limit) sessions from one address. Only the `--join` the ssh login runs
+sends it - somebody who can run their own programs on the server can lie
+here, but could also connect to the gate as often as they like anyway.
 
 The gate answers `SMT1|OK` and from then on relays raw bytes: keys to a
 pseudo-terminal running `shellmmorpg.sh --session` for that player, the
@@ -218,7 +224,7 @@ million, heals 2000, buffs 16 s, damage by level).
 server; a player's computer is a terminal that sends keys. A modified
 `--join` can only send other keys - it cannot touch a hero, the protocol or
 the world. Heroes are accounts (name + password, stored as a salted hash on
-the server). The game protocol below never leaves the server.
+the server - v8.1: PBKDF2-SHA256, 200,000 rounds, `SHELLMMO_PBKDF2_ITER`). The game protocol below never leaves the server.
 
 What the server guarantees:
 

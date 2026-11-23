@@ -17,14 +17,16 @@ read -r -d '' PY_HUB <<'PY'
 # The gate and the hub (v7.0). Hub: a connection is bound to the id it proves with AUTH - the world
 # server ("srv", SHELLMMO_HUB_TOKEN) or a game session the gate started (its player id,
 # SHELLMMO_SESS_TOKEN); everything from a connection that did not prove itself is dropped.
-# Gate: SMT1|name|cols|rows|gfx, then a pty with "bash GAME --session" for that player; bytes go
+# Gate: SMT1|name|cols|rows|gfx[|from], then a pty with "bash GAME --session" for that player; bytes go
 # both ways, an in-band ESC ] 5379 ; rows ; cols BEL resizes the terminal.
 import asyncio, fcntl, os, re, signal, struct, subprocess, sys, termios
 TOKEN = os.environ.get("SHELLMMO_HUB_TOKEN", "").encode()
 STOKEN = os.environ.get("SHELLMMO_SESS_TOKEN", "").encode()
 MAXBUF = 1 << 20
 MAXSESS = int(os.environ.get("SHELLMMO_MAX_PLAYERS", "32") or 32)
+MAXPERIP = int(os.environ.get("SHELLMMO_MAX_PER_IP", "4") or 4)     # v8.1: games at a time from one address (0: no limit)
 sessions = set()
+origin = {}       # game process -> the address its player came from (SSH_CONNECTION, sent by --join)
 clients = set()
 ids = {}          # writer -> bound sender id (b"srv" for the world server)
 # --- interest management (v6.3): in the open world a player only gets the monsters near them -------
@@ -214,11 +216,14 @@ async def gate(reader, writer):
             hs = await asyncio.wait_for(reader.readline(), 15)
         except Exception:
             return
-        m = re.fullmatch(rb"SMT1\|(\?[A-Za-z0-9_-]{0,12}|[A-Za-z0-9_-]{1,12})\|(\d{1,3})\|(\d{1,3})\|(hd|ascii|-)\r?\n", hs)
+        m = re.fullmatch(rb"SMT1\|(\?[A-Za-z0-9_-]{0,12}|[A-Za-z0-9_-]{1,12})\|(\d{1,3})\|(\d{1,3})\|(hd|ascii|-)(?:\|([0-9A-Fa-f.:]{2,45}|-))?\r?\n", hs)
         if not m:
             writer.write(b"SMT1|NO|This is a shellmmorpg 7 server - play over ssh (./shellmmorpg.sh --ssh user@host).\n"); return
         if len(sessions) >= MAXSESS:
             writer.write(b"SMT1|NO|The server is full.\n"); return
+        src = m.group(5) if m.group(5) not in (None, b"-") else None
+        if src is not None and MAXPERIP > 0 and sum(1 for a in origin.values() if a == src) >= MAXPERIP:
+            writer.write(b"SMT1|NO|Too many games from your address (at most %d).\n" % MAXPERIP); return
         name, rows, cols, gfx = m.group(1).decode(), int(m.group(3)), int(m.group(2)), m.group(4).decode()
         env = {k: os.environ[k] for k in ENV_KEEP if k in os.environ}
         env.update(TERM="xterm-256color", SHELLMMO_NAME=name.lstrip("?"))
@@ -233,6 +238,8 @@ async def gate(reader, writer):
         os.close(slave)
         os.set_blocking(master, False)
         sessions.add(proc)
+        if src is not None:
+            origin[proc] = src
         writer.write(b"SMT1|OK\n")
         done = asyncio.Event()
         def from_game():
@@ -298,6 +305,7 @@ async def gate(reader, writer):
                 pass
             proc.wait()
             sessions.discard(proc)
+            origin.pop(proc, None)
         if master is not None:
             try:
                 loop.remove_reader(master)

@@ -79,7 +79,7 @@ def main():
         # a new hero: the password is asked by the game on the server; Cleric (4), default symbol and color
         open(f'{base}/home1/tess.char', 'w').write('version=2\nCLS=1\nLVL=40\nGOLD=99999999\n')   # (a 6.x hero file: ignored now)
         c = Client(port, 'tess', f'{base}/home1')
-        check('the game on the server asks for the password', c.login('secret1', new=True))
+        check('the game on the server asks for the password', c.login('secret123', new=True))
         c.pump(1); c.key('4'); c.pump(0.7); c.key('\r'); c.pump(0.7); c.key('\r'); c.pump(2.5)
         check('a new hero enters the world', 'online' in c.text())
         check('...a new one, not the file on the player\'s computer', 'Cleric' in c.text())
@@ -95,12 +95,12 @@ def main():
         check('no bash errors on the screen', not re.search(r'line \d+:|syntax error|unbound', c.text()))
         # coming back (from another computer)
         c2 = Client(port, 'tess', f'{base}/home2')
-        c2.login('secret1'); c2.pump(4)
+        c2.login('secret123'); c2.pump(4)
         check('the hero is loaded: welcome back', 'Welcome back' in c2.text())
         check('...as a Cleric', 'Cleric' in c2.text())
         # v6.3: logging in from a third computer takes the hero over, the second session ends without saving
         c2b = Client(port, 'tess', f'{base}/home3')
-        c2b.login('secret1'); c2b.pump(4); c2.pump(3)
+        c2b.login('secret123'); c2b.pump(4); c2.pump(3)
         check('a new login takes the hero over', 'Welcome back' in c2b.text())
         check('...the old session ends', c2.p.poll() is not None and 'somewhere else' in c2.text(), c2.text()[-200:])
         c2b.stop()
@@ -113,7 +113,7 @@ def main():
         # an old hero file on the server's own disk is not handed to whoever logs in with that name
         shutil.copy(f'{base}/srv/chars/tess.char', f'{base}/srv/oldie.char')
         c4 = Client(port, 'oldie', f'{base}/home3')
-        c4.login('secret1', new=True); c4.pump(2)
+        c4.login('secret123', new=True); c4.pump(2)
         check('a stranger does not get the host\'s old local hero', 'Choose your class' in c4.text() and not os.path.exists(f'{base}/srv/oldie.char.moved-to-server'))
         c4.stop()
         # only over ssh: --join to another machine is refused with a hint, --bind is gone

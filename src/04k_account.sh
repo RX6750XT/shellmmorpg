@@ -110,6 +110,7 @@ acct_login() {  # talks to the world server: loads the hero into CHAR_TEXT ("" =
         CHAR_TEXT=${txt//$US/$'\n'}
         return 0 ;;
       DENY)
+        if [[ $AR_A == BUSY ]] && (( ++again < 10 )); then sleep 1; continue; fi   # v8.1: the server hashes 5 passwords a second
         echo "Login refused: $AR_B" >&2
         if [[ $AR_A == PASS && -z $SHELLMMO_PASS ]] && (( ++tries < 3 )); then ACC_PASS=""; continue; fi
         if [[ -n $ASK_NAME ]]; then                     # v7.2: back to "who are you?" instead of ending the session
@@ -127,8 +128,13 @@ acct_login() {  # talks to the world server: loads the hero into CHAR_TEXT ("" =
 }
 
 acct_resume() {  # after a lost connection: log in again without loading, then store what happened meanwhile
-  send ALOAD "$MY_ID" "$MY_NAME" "$ACC_PASS" keep
-  if acct_wait 5000 && [[ $AR_K == OK ]]; then return 0; fi
+  local i
+  for (( i = 0; i < 5; i++ )); do                  # v8.1: BUSY - the server checks 5 passwords a second
+    send ALOAD "$MY_ID" "$MY_NAME" "$ACC_PASS" keep
+    if acct_wait 5000 && [[ $AR_K == OK ]]; then return 0; fi
+    [[ $AR_K == DENY && $AR_A == BUSY ]] || break
+    sleep 1
+  done
   [[ $AR_K == DENY ]] && logm "Could not log in again: $AR_B" "$K_HURT"
   net_up=0; exec 7>&- 2>/dev/null
   return 1

@@ -22,7 +22,8 @@ the game asks for it at login (`SHELLMMO_PASS` works only for the host's own
 game). The server keeps your hero safe: it is saved every 30 seconds,
 whenever something important happens and when you quit (**Q**) - or when
 your connection drops. Another world is another hero. Only one session per
-hero at a time. Five wrong passwords lock the name for a minute.
+hero at a time. Five wrong passwords lock the name for a minute (the next time for two, then
+four ... at most 30). A new hero needs a password of at least 8 characters.
 
 Since 7.0 your game runs **on the server** and you reach it **only over
 ssh**: ssh shows it in your terminal and sends your keys. On a slow connection you feel the round trip

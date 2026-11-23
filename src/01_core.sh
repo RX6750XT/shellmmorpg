@@ -36,7 +36,7 @@
 #  This file is built from src/*.sh and world.txt by build.sh - edit those.
 # ============================================================================
 
-VERSION="8.0"
+VERSION="8.1"
 DATA_DIR="${SHELLMMO_DIR:-$HOME/.shellmmorpg}"
 SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
 # string lengths must count characters, not bytes (emoji graphics): make sure we run in a UTF-8 locale
@@ -109,7 +109,9 @@ term_main() {  # connect to the gate, then only send keys and show what comes ba
   term_size
   local hn=$MY_NAME
   [[ -n $ASK_NAME ]] && { hn="?"; [[ -n $NAME_SET ]] && hn+=$MY_NAME; }   # v7.2: "?" = the game asks who you are
-  printf 'SMT1|%s|%s|%s|%s\n' "$hn" "$TCOLS" "$TROWS" "${GFX:--}" >&3
+  local from=${SSH_CONNECTION%% *}                 # v8.1: where the player comes from (set by sshd): the gate limits games per address
+  [[ $from =~ ^[0-9A-Fa-f.:]{2,45}$ ]] || from=-
+  printf 'SMT1|%s|%s|%s|%s|%s\n' "$hn" "$TCOLS" "$TROWS" "${GFX:--}" "$from" >&3
   IFS= read -r -t 10 -u 3 line || die "$NET_HOST:$NET_PORT does not answer like a shellmmorpg 7 server"
   line=${line%$'\r'}
   [[ $line == SMT1\|NO\|* ]] && die "${line#SMT1|NO|}"

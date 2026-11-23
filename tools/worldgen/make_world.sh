@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-#  Rebuild the world map.
+#  Rebuild the world map (v8.0: extend2 -> extend4 -> extend8).
 #    tools/worldgen/make_world.sh            generate, check, show the difference
 #    tools/worldgen/make_world.sh --install  ... and make it the game's world.txt
 #    tools/worldgen/make_world.sh --full     start from scratch (genmap -> v1.1
@@ -19,7 +19,10 @@ echo "extend2.py: 360x150 world from world_v18.txt"
 python3 "$here/extend2.py" "$tmp/world_v20.txt" > "$tmp/log" 2>&1
 cmp -s "$tmp/world_v20.txt" "$here/world_v20.txt" && echo "  = world_v20.txt (unchanged)" || echo "  differs from world_v20.txt"
 echo "extend4.py: 480x200 world from world_v20.txt"
-python3 "$here/extend4.py" "$tmp/world.txt" > "$tmp/log" 2>&1
+python3 "$here/extend4.py" "$tmp/world_v40.txt" > "$tmp/log" 2>&1
+cmp -s "$tmp/world_v40.txt" "$here/world_v40.txt" && echo "  = world_v40.txt (unchanged)" || echo "  differs from world_v40.txt (4.0-7.2 had hand edits - extend8 builds on world_v40.txt)"
+echo "extend8.py: 600x200 world from world_v40.txt"
+python3 "$here/extend8.py" "$tmp/world.txt" > "$tmp/log" 2>&1
 python3 "$here/check_world.py" "$tmp/world.txt"
 if cmp -s "$tmp/world.txt" "$root/world.txt"; then
   echo "identical to the current world.txt"

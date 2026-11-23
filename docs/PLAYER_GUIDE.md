@@ -138,6 +138,14 @@ further you go; the header always shows the region and its level.
 | Dragonspine (east of the Void Rift) | 35-37 | Wyrmrest Keep |
 | Bonefields (south of the Void Rift) | 36-38 | Gravewatch |
 | Starfall Crater (far south-east) | 38-40 | Dawnspire |
+| Shroudmarch (east of Starfall Crater, past Dawnspire) | 40-42 | Lanternfall |
+| Gilded Expanse (east of Dragonspine, north of the Shroudmarch) | 42-45 | Sunhollow |
+| Rimewastes (north of the Expanse) | 45-47 | Rimeholt |
+| Aether Reach (the far north-east) | 47-50 | Zenith |
+
+The four lands beyond the edge (8.0) are reached by two passes - east from
+Dawnspire and east from Wyrmrest Keep - and joined by one road from
+Lanternfall north to Zenith. Their towns belong to the Horizon Watch.
 
 Every old land also got a new creature (an Angry Goose in the meadows,
 Owlbears in Whisperwood, Ice Trolls on the tundra ...).
@@ -161,10 +169,11 @@ map tell you where). Everyone who fights one gets loot.
 ## Getting stronger
 
 - **XP** for kills, quests and story chapters; the next level needs
-  30·L² + 70·L XP. The cap is level 40; after that, paragon levels (see
+  30·L² + 70·L XP. The cap is level 50; after that, paragon levels (see
   Endgame).
 - **Gear** has a tier (Worn, Sturdy, Fine, Mithril, Runic, Dragon, Celestial,
-  Starforged, Voidforged - and from level 30 Titanforged, Eclipsed, Godforged) and a rarity (Common, Rare, Epic, Legendary).
+  Starforged, Voidforged - from level 30 Titanforged, Eclipsed, Godforged, and from level 42
+  Mythforged, Primordial, Ascendant) and a rarity (Common, Rare, Epic, Legendary).
   **Uniques** are named legendaries - bosses carry them, and some story
   chapters give one. Bonus stats: crit, HP, MP, damage, armor or light.
 - **Five slots**: weapon, armor, offhand, helmet, trinket.
@@ -269,23 +278,23 @@ nothing. Gems also sell for more inside an item.
   reward and which faction is grateful. `q` → tab `2` lists them.
 - **Party quests**: the party leader takes them for everyone; progress is
   shared and rewards are 25% higher.
-- **The story** (`q`, ⭐ / `*` above the person to talk to): 42 chapters in
-  two acts - *The Shattered Crown* (level 1-28) and *The Fallen Star*
-  (level 30-40, through all seven new lands) - through every town and every
-  dungeon. Chapters wait
+- **The story** (`q`, ⭐ / `*` above the person to talk to): 55 chapters in
+  three acts - *The Shattered Crown* (level 1-28), *The Fallen Star*
+  (level 30-40, through all seven lands of 4.0) and *Beyond the Edge*
+  (level 40-50, 8.0) - through every town and every dungeon. Chapters wait
   until you reach their level. Rewards include allies, class gear and two
   uniques.
 
-## Endgame (level 40)
+## Endgame (level 50)
 
-**Mythic dungeons.** At level 40 every dungeon gate asks whether you want
+**Mythic dungeons.** At level 50 every dungeon gate asks whether you want
 the normal dungeon or a mythic one, at your key level (+2 to start, up to
-+20). Every foe is scaled to level 40 and grows with each key level. The
++20). Every foe is scaled to level 50 and grows with each key level. The
 week's affixes: *Fortified* or *Tyrannical* from +2, one champion affix on
 a third of all foes from +4, *Bolstering* or *Raging* from +7. The clock
 (30 seconds per room plus 2.5 minutes) shows in the side panel; each death
 costs 5 seconds. In time: your key rises by one - by two in under 60% of
-the time. The boss gives everyone tier-12 epic gear (legendary 5% + 2% per
+the time. The boss gives everyone Ascendant (tier-15) epic gear (legendary 5% + 2% per
 key level), sometimes a perfect gem, and valor (20 + 6 per key level, half
 again in time).
 
@@ -296,22 +305,32 @@ and she takes a fifth of the damage until they are dead. Below a third
 she unleashes a total eclipse around her - run. After eight minutes she
 hits twice as hard. Everyone gets a three-socket legendary.
 
+**The Sundered Sky** (Aether Reach, north-west of Zenith, level 50): the
+second raid. Aurelion, the Sundered Sun, grows with every hero too. Every
+third blow drops solar flares under everyone - step off them. At two thirds
+his wardens appear and his sunfire shield takes four fifths of the damage
+until they fall. Below half he sunders the sky: eight beams in a cross
+around him - stand between them. Below a quarter: a supernova six tiles
+wide - run as far as you can. After ten minutes he hits twice as hard.
+Everyone gets a three-socket Ascendant legendary; four uniques and the
+Sunfire Wyrm are his alone.
+
 **Invasions.** About every 45 minutes the Horde attacks a town (an
 announcement tells which): two waves and a warlord, twelve minutes. Hit
 an invader and you count as a defender: valor, XP, gold and gear when the
 town holds.
 
-**Valor** buys Godforged gear (epic, two sockets; a legendary weapon with
-three), perfect gems and two mounts from Hale in Hearthmoor and Seren in
-Dawnspire.
+**Valor** buys Ascendant gear (epic, two sockets; a legendary weapon with
+three), perfect gems and three mounts from Hale in Hearthmoor, Seren in
+Dawnspire and Castor in Zenith.
 
 **Dailies and weeklies** (from level 30, quest log tab 4): three tasks a
 day, two a week, the same for everyone. Dailies pay 30 valor, gold and XP;
 weeklies 150 valor and a perfect gem.
 
-**Paragon.** After level 40 every 60,000 XP (a little more each time) is a
-paragon level and a point; the three talent points of levels 38-40 count
-too. `[x]` then `[p]`: Might (+1% damage), Vitality (+1% health),
+**Paragon.** After level 50 every 60,000 XP (a little more each time) is a
+paragon level and a point; the talent points of levels 38-50 that no tree
+can take count too (13 at level 50). `[x]` then `[p]`: Might (+1% damage), Vitality (+1% health),
 Precision (+1 crit per 2), Warding (+1% resistance), Wisdom (+1% mana),
 Celerity (-1% cooldowns). Innkeepers reset them along with your talents.
 
@@ -321,9 +340,14 @@ Stablemaster (Hearthmoor) sells the Brown Horse (+40%), the Swift Steed
 of Kadar and the Northern Clans). Valor buys the Storm Gryphon (+80%) and
 the Ember Drake (+100%, also a Mythic +15 in time). The Pale Rider
 sometimes leaves his Bone Charger (+80%), Nyxara her Starborn Stag (+100%).
+Beyond the edge, Wren the Mistrider (Lanternfall) sells the Mist Stalker
+(+100%, level 42) and the Gilded Scarab (+100%, for the Honored of the
+Horizon Watch); Frostmaw sometimes leaves a Woolly Mammoth, valor buys the
+Aurora Unicorn (+110%), and Aurelion sometimes leaves the Sunfire Wyrm
+(+120%). At a stable, keys `1`-`9` and `a`-`d` pick a mount.
 A hit, an attack or a dungeon gets you off.
 
-**Achievements** (`[o]`): 32 of them, many with a title (`[t]` there to
+**Achievements** (`[o]`): 60 of them, many with a title (`[t]` there to
 choose one - it shows in your side panel). Everyone hears when you earn
 one.
 
@@ -364,6 +388,13 @@ Leaving and coming back before the boss is dead resumes your dungeon.
 | Temple of the Jade Serpent | 23 | Emerald Jungle | Quetzal the Jade Serpent |
 | Obsidian Forge | 24 | Scorched Badlands | Ignis the Molten King |
 | Throne of the Void | 28 | Void Rift | The Hollow King |
+| ... | 30-40 | the lands of 4.0 and 6.0 | ... |
+| Shroud Abbey | 41 | Shroudmarch | Abbess Morwyn the Veiled |
+| Tomb of the Sun Kings | 43 | Gilded Expanse | Ramahet the Sun King |
+| Hall of Endless Winter | 46 | Rimewastes | Skadi, the Winter Unending |
+| The Starwright's Observatory | 48 | Aether Reach | The Starwright |
+| The World's Edge | 50 | Aether Reach | Oblivion, the Last Horizon |
+| The Sundered Sky (raid) | 50 | Aether Reach | Aurelion, the Sundered Sun |
 
 Dungeons are dark: you see what your torch lights and remember what you saw.
 
@@ -408,6 +439,7 @@ Guild keeps the same room for you in every town.
 | Guest Room | 15 | 2500 | 300 | 8 | 35 | +15% XP |
 | Grand Suite | 25 | 12000 | 1200 | 14 | 50 | +20% XP |
 | Hero's Hall | 35 | 50000 | 4000 | 20 | 70 | +25% XP |
+| Skyward Manor | 45 | 150000 | 8000 | 26 | 90 | +30% XP |
 
 Moving up only pays the difference and takes everything along. The rent
 for the week is paid when you go up - from your purse, or from the vault.

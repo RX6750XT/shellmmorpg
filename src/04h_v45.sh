@@ -101,7 +101,7 @@ valor_buy() {  # index
          VALOR=$(( VALOR - c )); mount_give "$s" ;;
     LW|W|A|H|O|J)
          (( ${#INV[@]} < BAGS )) || { logm "Your bags are full." "$K_HURT"; return; }
-         if [[ $w == LW ]]; then epic_item W 3 3 12; else epic_item "$w" 2 2 12; fi
+         if [[ $w == LW ]]; then epic_item W 3 3 "$MAXTIER"; else epic_item "$w" 2 2 "$MAXTIER"; fi
          VALOR=$(( VALOR - c )); INV+=("$ITEM"); NEWG[$ITEM]=1; item_name "$ITEM" "$CLS"
          logm "The quartermaster hands you $INAME." $'\e['"${ICOL}m" ;;
   esac
@@ -133,7 +133,7 @@ mount_buy() {  # index (at Hilda's)
   r=${MNT_REQ[i]}
   case $r in
     lvl:*) (( LVL >= ${r#lvl:} )) || { logm "Hilda: 'Come back at level ${r#lvl:}, this one bites.'" "$K_HURT"; return; } ;;
-    rep:*) r=${r#rep:}; (( REP[${r%%:*}] >= ${r#*:} )) || { logm "Hilda: 'Only for the Honored of the ${FAC_NAME[${r%%:*}]}.'" "$K_HURT"; return; } ;;
+    rep:*) r=${r#rep:}; (( ${REP[${r%%:*}]:-0} >= ${r#*:} )) || { logm "Hilda: 'Only for the Honored of the ${FAC_NAME[${r%%:*}]}.'" "$K_HURT"; return; } ;;
   esac
   (( GOLD >= MNT_GOLD[i] )) || { logm "You need ${MNT_GOLD[i]} gold." "$K_HURT"; return; }
   GOLD=$(( GOLD - MNT_GOLD[i] )); mount_give "$i"
@@ -184,7 +184,7 @@ dly_fix() {  # new day / new week: new tasks
   local p pool=() t i r
   week_now
   if [[ ${DAILY%% *} != "$DAYN" ]]; then
-    for t in "${DLY_T[@]}"; do [[ $t == myth* ]] && (( LVL < MAXLVL )) && continue; pool+=("$t"); done
+    for t in "${DLY_T[@]}"; do [[ $t == myth* ]] && (( LVL < MAXLVL )) && continue; [[ $t == edge* ]] && (( LVL < 40 )) && continue; pool+=("$t"); done
     dly_pick "$DAYN" 3 "${pool[@]}"
     DAILY=$DAYN
     for (( i = 0; i < 3; i++ )); do DAILY+=" $(( ( (DAYN + i) * 31 ) % 100 )):0:0"; done
@@ -197,9 +197,10 @@ dly_fix() {  # new day / new week: new tasks
 }
 dly_tasks() {  # -> DLY_CUR (3 dailies) WKY_CUR (2 weeklies), DREG (the region of the kill daily)
   local pool=() t
-  for t in "${DLY_T[@]}"; do [[ $t == myth* ]] && (( LVL < MAXLVL )) && continue; pool+=("$t"); done
+  for t in "${DLY_T[@]}"; do [[ $t == myth* ]] && (( LVL < MAXLVL )) && continue; [[ $t == edge* ]] && (( LVL < 40 )) && continue; pool+=("$t"); done
   dly_pick "${DAILY%% *}" 3 "${pool[@]}"; DLY_CUR=("${DP[@]}")
-  dly_pick "$(( ${WEEKLY%% *} + 5 ))" 2 "${WKY_T[@]}"; WKY_CUR=("${DP[@]}")
+  pool=(); for t in "${WKY_T[@]}"; do [[ $t == raid2* ]] && (( LVL < MAXLVL )) && continue; pool+=("$t"); done   # v8.0
+  dly_pick "$(( ${WEEKLY%% *} + 5 ))" 2 "${pool[@]}"; WKY_CUR=("${DP[@]}")
   DREG=${DLY_REG[$(( ${DAILY%% *} % ${#DLY_REG[@]} ))]}
 }
 dly_text() {  # "kind:need:text" -> DTX
@@ -244,6 +245,7 @@ dly_kill() {  # monster type: kills count for the dailies
     (( RANDOM % 100 < 10 )) && mount_give 7
   fi
   (( t == W_RIDER && RANDOM % 100 < 8 )) && mount_give 5
+  v80_kill "$t"
 }
 
 # --- achievements and titles -------------------------------------------------------------------------------------------
@@ -251,7 +253,7 @@ ach_ok() {  # index -> 0 if earned
   local i=$1 n f
   case $i in
     0) (( LVL >= 20 )) ;; 1) (( LVL >= 30 )) ;; 2) (( LVL >= 40 )) ;; 3) (( PARA >= 10 )) ;; 4) (( PARA >= 50 )) ;;
-    5) (( KILLS >= 2000 )) ;; 6) (( KILLS >= 10000 )) ;; 7) (( STORY >= 24 )) ;; 8) (( STORY >= NST )) ;;
+    5) (( KILLS >= 2000 )) ;; 6) (( KILLS >= 10000 )) ;; 7) (( STORY >= 24 )) ;; 8) (( STORY >= 42 )) ;;
     9|10) n=${QLS//[^x]/}; if (( i == 9 )); then (( ${#n} >= 10 )); else (( ${#n} >= NQL )); fi ;;
     11) (( DCLR >= 25 )) ;; 12) (( DCLR >= 100 )) ;;
     13) (( MYBEST >= 5 )) ;; 14) (( MYBEST >= 10 )) ;; 15) (( MYBEST >= 15 )) ;; 16) (( MYBEST >= 20 )) ;;

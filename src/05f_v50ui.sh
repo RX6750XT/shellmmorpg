@@ -44,7 +44,7 @@ ui_inn() {
 inn_key() {
   case $1 in
     1) room_home ;;
-    [2-5]) room_rent $(( $1 - 1 )) ;;
+    [2-9]) (( $1 - 1 <= NROOM )) && room_rent $(( $1 - 1 )) ;;
     d) (( ROOM_T )) && door_next ;;
     v) visit_ask ;;
   esac

@@ -164,7 +164,8 @@ n0=0 n3=0; for c in "${INV[@]}"; do (( CL_RR[${c#C.}] == 0 )) && n0=$(( n0 + 1 )
 gt "the old boot is much more common than a black pearl" "$n0" $(( n3 * 3 )); BAGS=10
 INV=() CLOG=""; v50_fix; STORY=25; col_story; eq "an old hero gets the relics of chapters 6 to 24 at once" "${#INV[@]}" 4
 STORY=42; col_story; eq "...all seven at the end" "${#INV[@]}" 7
-col_count; eq "eleven sets... no: seven relics found" "${CLSD[5]}/${CLST[5]}" "7/7"
+col_count; eq "eleven sets... no: seven relics found" "${CLSD[5]}/${CLST[5]}" "7/${CLST[5]}"
+STORY=$NST; col_story; col_count; eq "...and act III's at its end (8.0)" "${CLSD[5]}/${CLST[5]}" "${CLST[5]}/${CLST[5]}"
 ach_check; eq "achievement: Keeper of Tales" "${ACHS:$(( ACH50 + 10 )):1}" 1
 CLOG=""; v50_fix; INV=(C.40); BANK=(C.41); col_scan; check "what you hold counts as found" col_has 40; check "...the vault too" col_has 41
 CLOG=$(printf '1%.0s' $(seq $NCOL)); ach_check; eq "Master Collector" "${ACHS:$(( ACH50 + 4 )):1}" 1

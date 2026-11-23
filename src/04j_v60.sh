@@ -15,7 +15,7 @@ ach_ok60() {  # achievements of 6.0 (index ACH60 and up)
     2) col_count; (( CLN >= 100 )) ;;
     3) n=${QLS//[^x]/}; (( ${#n} >= 25 )) ;;
     4) (( DCLR >= 250 )) ;;
-    *) return 1 ;;
+    *) ach_ok80 "$1" ;;                                        # v8.0
   esac
 }
 

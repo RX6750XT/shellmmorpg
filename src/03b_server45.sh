@@ -55,7 +55,7 @@ myth_finish() {  # map: the boss of a mythic dungeon is dead
     n=$(( n + 1 )); names+="${SP_NAME[$p]}, "
     send MDONE srv "$p" "$k" "$up" $(( el / 1000 )) "$val"
     r=2; (( RANDOM % 100 < 5 + 2 * k )) && r=3
-    srv_loot "$p" "?" 12 "$r" $(( r == 3 ? 3 : 1 + RANDOM % 2 ))
+    tier_for "$MYTH_LVL"; srv_loot "$p" "?" "$TF" "$r" $(( r == 3 ? 3 : 1 + RANDOM % 2 ))     # v8.0: the gear of the level cap
     (( RANDOM % 100 < 10 + 3 * k )) && { gem_mat $(( RANDOM % 6 )) 4; send LOOT srv "$p" "g$GM"; }
   done
   if (( up )); then send ANN srv "${names%, } completed ${D_NAME[${IN_TYPE[$map]}]} on Mythic +$k in time!"
@@ -107,16 +107,43 @@ raid_attack() {  # boss target damage: Nyxara's three phases
   fi
   mon_hit "$m" "$2" "$dmg"
 }
-raid_finish() {  # map: Nyxara is dead
-  local map=$1 p names=""
+raid_finish() {  # map: the raid boss is dead (v8.0: raid 1 Nyxara, raid 2 Aurelion)
+  local map=$1 p names="" r=${D_RAID[${IN_TYPE[$1]}]:-1} tier=12 uq
+  uq=("${RAID_UQ[@]}"); (( r == 2 )) && { uq=("${RAID2_UQ[@]}"); tier=$MAXTIER; }
   for p in "${!SP_NAME[@]}"; do
     [[ ${SP_MAP[$p]} == "$map" ]] || continue
     names+="${SP_NAME[$p]}, "
-    srv_loot "$p" "?" 12 3 3
-    (( RANDOM % 100 < 40 )) && send LOOT srv "$p" "i:U.${RAID_UQ[RANDOM % ${#RAID_UQ[@]}]}"
+    srv_loot "$p" "?" "$tier" 3 3
+    (( RANDOM % 100 < 40 )) && send LOOT srv "$p" "i:U.${uq[RANDOM % ${#uq[@]}]}"
     (( RANDOM % 2 )) && { gem_mat $(( RANDOM % 6 )) 4; send LOOT srv "$p" "g$GM"; }
   done
-  send ANN srv "${names%, } brought down Nyxara, Queen of the Eclipse! The sky is clear again."
+  send ANN srv "${names%, } brought down ${RAID_NAME[r]}! ${RAID_ANN[r]}"
+}
+raid2_attack() {  # boss target damage: Aurelion, the Sundered Sun - flares, the sundering, the supernova
+  local m=$1 t=${MT[$1]} map=${MMAP[$1]} dmg=$3 q n=0
+  (( NOW - ${IN_T0[$map]:-$NOW} > 600000 )) && dmg=$(( dmg * 2 ))       # 10 minutes: the sun burns everything
+  MATKN[m]=$(( MATKN[m] + 1 ))
+  if (( MHP[m] * 4 < MMAX[m] && MATKN[m] % 6 == 0 )); then                # below a quarter: supernova - get far away
+    send BOSS srv "$map" "${M_NAME[t]}: SUPERNOVA! Run, as far as you can!" "${MX[m]}" "${MY[m]}"
+    aoe_add "$map" "${MX[m]}" "${MY[m]}" 6 3000 $(( dmg * 5 )) 1 "$m"; return
+  fi
+  if (( MHP[m] * 2 < MMAX[m] && MATKN[m] % 4 == 0 )); then                # below half: the sundering - a cross of fire
+    send BOSS srv "$map" "${M_NAME[t]} sunders the sky - stand between the beams!" "${MX[m]}" "${MY[m]}"
+    for q in -4 -2 2 4; do
+      aoe_add "$map" "${MX[m]}" $(( MY[m] + q )) 1 2200 $(( dmg * 3 )) 1 "$m"
+      aoe_add "$map" $(( MX[m] + q )) "${MY[m]}" 1 2200 $(( dmg * 3 )) 1 "$m"
+    done
+    return
+  fi
+  if (( MATKN[m] % 3 == 0 )); then                                        # solar flares under everyone
+    send BOSS srv "$map" "${M_NAME[t]} calls down solar flares - move!" "${MX[m]}" "${MY[m]}"
+    for q in ${PLIST[$map]}; do
+      (( n++ < 6 )) || break
+      aoe_add "$map" "${SP_X[$q]}" "${SP_Y[$q]}" 1 1700 $(( dmg * 2 )) 5 "$m"
+    done
+    return
+  fi
+  mon_hit "$m" "$2" "$dmg"
 }
 
 # --- invasions: now and then the Horde marches on a town ------------------------------------------------------------

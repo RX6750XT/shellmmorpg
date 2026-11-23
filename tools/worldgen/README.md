@@ -8,7 +8,8 @@ The world map (`world.txt` in the project root) grew in three steps:
 | 1.1 | by hand (88 tiles) | `history/world_v11.txt` |
 | 1.2 | `history/extend.py` | `world_v18.txt` - 240×100, the world of v1.2 - v1.8 |
 | 2.0 | `extend2.py` | `world_v20.txt` - 360×150 with the five new lands (v2.0 - v3.0) |
-| 4.0 | `extend4.py` | `world.txt` - 480×200 with seven more lands for levels 30-40 |
+| 4.0 | `extend4.py` | `world_v40.txt` - 480×200 with seven more lands for levels 30-40 (the map of 4.0 - 7.2) |
+| 8.0 | `extend8.py` | `world.txt` - 600×200 with four more lands for levels 40-50, painted onto `world_v40.txt` |
 
 Every step is deterministic (fixed random seeds), so
 

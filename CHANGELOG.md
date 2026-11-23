@@ -1,5 +1,97 @@
 # Changelog
 
+## 8.0 - Beyond the Edge
+
+**Level 50**
+- The cap rises from 40 to 50. Heroes at 40 keep their paragon levels and
+  points and simply go on levelling; the talent points of levels 38-50
+  beyond the 36 a tree can take count as paragon points (13 at level 50).
+- Three more gear tiers: **Mythforged** (level 42), **Primordial** (46) and
+  **Ascendant** (50). Creatures are stronger between 40 and 50; mythic
+  dungeons scale every foe to level 50 and pay Ascendant gear; valor buys
+  Ascendant gear. Mythic keys now open at level 50.
+- Professions go to 50.
+
+**The world grows to 600x200** - four new lands east of everything, from
+the south up. Two passes lead in: east from Dawnspire (Starfall Crater)
+and east from Wyrmrest Keep (Dragonspine); one road runs north through
+all four.
+
+| Land | Level | Town |
+| --- | --- | --- |
+| the Shroudmarch - mist, a void-touched bog, chasms | 40-42 | Lanternfall |
+| the Gilded Expanse - golden dunes, the ruins of the sun kings | 42-45 | Sunhollow |
+| the Rimewastes - glaciers, frozen lakes, black pines | 45-47 | Rimeholt |
+| the Aether Reach - storm heights and crystal spires over the sky gaps | 47-50 | Zenith |
+
+- 24 creatures (six per land, with elements, healers and casters), two
+  rare elites per land, a world boss per land: Grimvane the Mistlord,
+  Khepra the Golden Colossus, Frostmaw the Glacier Titan, Zephyrion the
+  Storm Eternal.
+- Four towns with smith, inn, bank, alchemist or general store, a
+  questgiver and a questline giver each - Wren the Mistrider (stable) in
+  Lanternfall, Castor the Valor Quartermaster in Zenith. A new faction,
+  **the Horizon Watch**, with its own quartermaster unique.
+- No new tiles: `tools/worldgen/extend8.py` paints the new lands from the
+  4.0 map (`world_v40.txt`).
+
+**Dungeons**
+- Shroud Abbey (41), Tomb of the Sun Kings (43), Hall of Endless Winter
+  (46), the Starwright's Observatory (48) and **the World's Edge** (50).
+- **The Sundered Sky** - the second raid, level 50 (north-west of Zenith).
+  Aurelion, the Sundered Sun: solar flares under everyone, a shield of
+  sunfire while his wardens live, below half a cross of eight beams (stand
+  between them), below a quarter a supernova six tiles wide (run), twice
+  as hard after ten minutes. Three-socket Ascendant legendaries and four
+  uniques of his own.
+
+**Story, act III: Beyond the Edge** - 13 chapters, levels 40-50, from
+Lanternfall to the edge of the world and back to Old Tom. Act II no longer
+says THE END.
+
+**Questlines**: The Drowned Lanterns, Sands of the Sun Kings, The Long
+Winter, Charting the Heavens (with choices, as always).
+
+**Items**
+- 25 uniques (dungeon bosses, world bosses, the raid, questlines, story,
+  the Horizon Watch).
+- 10 materials: Shadowsteel, Sunbrass and Aetherium ore; Gloomlily,
+  Goldthorn, Frostpetal, Skybloom; Mistfin Eel, Golden Koi, Glacier Pike.
+  The forge makes tiers 13-15 from the new ores, the alchemist new
+  recipes from the new herbs.
+
+**Mounts** - five more (13): the Mist Stalker (Wren, 25000 gold, level
+42), the Gilded Scarab (Wren, for the Honored of the Horizon Watch), the
+Woolly Mammoth (Frostmaw), the Aurora Unicorn (3000 valor, +110%) and the
+Sunfire Wyrm (Aurelion, +120%). The stable lists them with `1`-`9`,
+`a`-`d`.
+
+**Housing** - a fifth room, the **Skyward Manor** (level 45, 150000 gold,
+8000 a week): 26 displays, a 90-item chest, Well Rested +30%. `[6]` at
+the inn.
+
+**Collectables and achievements**
+- 29 collectables: trophies of the new bosses and the raid, a curio for
+  every new land, story relics of act III, new angler's and gatherer's
+  finds, and a hunter's trophy for every new rare elite.
+- 10 achievements (Ascended, Worldwalker, Sunbreaker, Edgewalker, Waywise,
+  Lord of the Manor, Ascendant Arms, Keeper of the Horizon, Curator of the
+  Edge ...). "Starbreaker" is now for act II (chapter 42), "Stablemaster"
+  and "Friend of All" for every mount and faction there is.
+- A daily (clear a level 40+ dungeon, from level 40) and a weekly (Aurelion,
+  at level 50).
+
+**Under the hood**
+- Raids are a table (`D_RAID`: dungeon type -> raid number); the server's
+  raid checks, the raid loot and the gate follow it. `M_RAID[boss]=2`
+  picks Aurelion's attacks (`raid2_attack`).
+- Item codes allow tiers 1-15 and uniques up to 999.
+- Old heroes: the explored map grows from 60x25 to 75x25 chunks and keeps
+  what was explored; saves get the ninth faction, the new mounts and the
+  new counters (`RAID2K`, `EDGEK`).
+- `tests/test_v80.sh`; tests that knew the old cap (40, 480 wide, tier 12)
+  know the new one.
+
 ## 7.2 - one open ssh account for everybody
 
 - `deploy/install.sh` sets up an open ssh account (`play`, `--guest NAME`

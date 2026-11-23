@@ -209,7 +209,7 @@ boss_summon() {  # mid: a dungeon boss calls its minions
     mon_state "$MID"
   done
   if (( ${M_RAID[$t]:-0} )) && (( MPH[m] == 1 )); then
-    send BOSS srv "$map" "${M_NAME[t]} hides behind a shield of night - kill her guards!" "${MX[m]}" "${MY[m]}"
+    send BOSS srv "$map" "${M_NAME[t]} ${RAID_SHIELD[${M_RAID[$t]}]}" "${MX[m]}" "${MY[m]}"
   else send BOSS srv "$map" "${M_NAME[t]} calls its servants!" "${MX[m]}" "${MY[m]}"; fi
 }
 
@@ -317,7 +317,7 @@ mon_die() {  # mid killer
     IN_DONE[$map]=1; dt=${IN_TYPE[$map]}
     send DCLEAR srv "$map" "${M_NAME[t]}"
     if (( ${IN_MYTH[$map]:-0} )); then myth_finish "$map"
-    elif (( dt == RAID_DT )); then raid_finish "$map"
+    elif (( ${D_RAID[$dt]:-0} )); then raid_finish "$map"
     else send ANN srv "${SP_NAME[$k]}'s group cleared the ${D_NAME[dt]}!"; fi
     [[ -n ${IN_PARTY[$map]} && -n ${PT_LEADER[${IN_PARTY[$map]}]} ]] && pq_progress "${IN_PARTY[$map]}" "D.$dt"
     slog "instance $map cleared"
@@ -411,6 +411,7 @@ mon_attack() {  # mid target
   if [[ $map == D* ]]; then                                        # v4.5: mythic and raid
     dmg=$(( dmg * ${MDS[m]:-100} / 100 ))
     (( ${IN_MYTH[$map]:-0} >= 7 && ${IN_AFC[$map]:-0} == 1 && M_BOSS[t] == 0 && MHP[m] * 10 < MMAX[m] * 3 )) && dmg=$(( dmg * 150 / 100 ))
+    if (( ${M_RAID[$t]:-0} == 2 )); then raid2_attack "$m" "$2" "$dmg"; return; fi   # v8.0: Aurelion
     if (( ${M_RAID[$t]:-0} )); then raid_attack "$m" "$2" "$dmg"; return; fi
   fi
   if (( MZONE[m] == -2 )); then
@@ -722,7 +723,7 @@ make_instance() {  # dtype pid mythic-level ids...
   NINST=$(( NINST + 1 )); map="D$NINST"
   seed=$(( ((RANDOM << 15) | RANDOM) & 0x7fffffff ))
   gen_dungeon "$map" "$dt" "$seed"
-  n=$#; scale=$(( 100 + 70 * (n - 1) )); (( dt == RAID_DT )) && scale=$(( 100 + 90 * (n - 1) ))
+  n=$#; scale=$(( 100 + 70 * (n - 1) )); (( ${D_RAID[$dt]:-0} )) && scale=$(( 100 + 90 * (n - 1) ))
   IN_TYPE[$map]=$dt IN_SEED[$map]=$seed IN_PARTY[$map]=$pid IN_EMPTY[$map]=0 IN_SCALE[$map]=$scale IN_DONE[$map]=0
   IN_MYTH[$map]=$mk IN_T0[$map]=$NOW IN_LIM[$map]=0; myth_afx; IN_AFC[$map]=$MC
   (( mk )) && { myth_limit "$dt"; IN_LIM[$map]=$MYL; }
@@ -757,7 +758,7 @@ srv_dreq() {  # from dtype [mythic level]
   local id=$1 dt=$2 mk=${3:-0} pid ex m ids=() far=0
   [[ $dt =~ ^(0|[1-9][0-9]?)$ ]] && (( dt < NDT )) || return
   [[ $mk =~ ^(0|[1-9][0-9]?)$ ]] && (( mk <= MYTH_MAX )) || mk=0          # (no "08": octal)
-  (( mk && (mk < 2 || ${SP_LVL[$id]:-1} < MAXLVL || dt == RAID_DT) )) && mk=0
+  (( mk && (mk < 2 || ${SP_LVL[$id]:-1} < MAXLVL || ${D_RAID[$dt]:-0}) )) && mk=0
   (( NOW - ${DREQ_T[$id]:-0} >= 1500 )) || return          # one request per 1.5 s per player
   DREQ_T[$id]=$NOW
   pid=${SP_PARTY[$id]}

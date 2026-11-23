@@ -30,19 +30,19 @@ eq "the quest board offers the new creatures" "$seen" 1
 ge "46 rare elites" "$NRARE" 46
 
 # --- the four dungeons ----------------------------------------------------------------------------------------------
-eq "23 dungeons" "$NDT" 23
+ge "23 dungeons (more since 8.0)" "$NDT" 23
 for (( d = D60; d < NDT; d++ )); do
   tile W "${D_ENTX[d]}" "${D_ENTY[d]}"; eq "${D_NAME[d]} has an entrance" "$T" ">"
   [[ -n ${N_FULL[${D_BOSS[d]}]:-} ]] && fail "a boss is no townsperson"
   [[ -n ${COL_BOSS[${D_BOSS[d]}]} ]] || fail "${D_NAME[d]}: no trophy for its boss"
 done
-eq "the levels fill the gaps" "${D_REQ[*]:D60}" "2 8 16 26"
+eq "the levels fill the gaps" "${D_REQ[*]:D60:4}" "2 8 16 26"
 new_hero 0 2; PX=${D_ENTX[D60]} PY=$(( D_ENTY[D60] + 1 )); SENT=(); dreq_until=0; next_move=0; try_move 0 -1
 [[ " ${SENT[*]} " == *"DREQ $MY_ID $D60"* ]] && ok || fail "a level 2 hero may enter the Old Mill: ${SENT[*]}"
 
 # --- world bosses -----------------------------------------------------------------------------------------------------
-eq "20 world bosses" "${#WB_LIST[@]}" 20
-eq "...each with a place" "${#WB_RECT[@]}" 20; eq "...and helpers" "${#WB_ADDS[@]}" 20
+ge "20 world bosses" "${#WB_LIST[@]}" 20
+eq "...each with a place" "${#WB_RECT[@]}" "${#WB_LIST[@]}"; eq "...and helpers" "${#WB_ADDS[@]}" "${#WB_LIST[@]}"
 send() { SENT+=("$*"); return 0; }; slog() { :; }
 SP_NAME=() SP_LVL=(); SP_NAME[aaaaaa]=al SP_LVL[aaaaaa]=4 SP_MAP[aaaaaa]=W SP_X[aaaaaa]=80 SP_Y[aaaaaa]=35
 picks=" "; for i in $(seq 30); do WB_MID=""; wb_spawn; picks+="${MT[WB_MID]} "; [[ -n $WB_MID ]] && close_wb_t=$WB_MID; done
@@ -50,7 +50,7 @@ picks=" "; for i in $(seq 30); do WB_MID=""; wb_spawn; picks+="${MT[WB_MID]} "; 
 for t in $picks; do (( M_LVL[t] <= 8 )) || { fail "${M_NAME[t]} (level ${M_LVL[t]}) is far too strong for level 4"; break; }; done; ok
 
 # --- townsfolk and questlines --------------------------------------------------------------------------------------------
-eq "27 questlines" "$NQL" 27
+ge "27 questlines" "$NQL" 27
 for (( q = 19; q < NQL; q++ )); do
   t=${QL_NPC[q]}
   [[ ${N_ROLE[$t]} == questgiver ]] || fail "${QL_NAME[q]}: giver is no questgiver"
@@ -74,7 +74,7 @@ new_hero 0 30; cm_set 990 $Q_PELL 298 17 900 900; talk_open 990; QSRC=$Q_PELL; g
 [[ " ${OFFERS[*]} " == *K.$C_BEETLE.* || " ${OFFERS[*]} " == *K.$C_PRISM.* ]] && ok || fail "Gemcutter Pell has work: ${OFFERS[*]}"
 
 # --- uniques and weapon kinds ---------------------------------------------------------------------------------------------
-eq "66 uniques" "$NUQ" 66
+ge "66 uniques" "$NUQ" 66
 for (( u = U60; u < NUQ; u++ )); do valid_item "U.$u" || fail "U.$u"; item_name "U.$u" 0; [[ $INAME == "${U_NAME[u]}" ]] || fail "unique $u name"; done; ok
 for u in "${U_DROP[@]}"; do a=(${u//:/ }); (( a[1] >= U60 )) && (( M_BOSS[a[0]] == 1 )) || continue; n=$(( n + 1 )); done
 item_stats U.$(( U60 + 7 )); eq "the Cinderdeep Lantern lights the way" "$IBT" light; gt "...a little" "$IBV" 0
@@ -84,7 +84,7 @@ can_use W.30.5.2 4 && ok || fail "rogues use hand cannons"; can_use W.30.5.2 0 &
 can_use W.31.5.2 8 && ok || fail "druids use runestones"
 
 # --- materials, nodes, recipes ---------------------------------------------------------------------------------------------
-eq "60 materials" "$NMAT" 60
+ge "60 materials" "$NMAT" 60
 for a in MAT_NAME MAT_VAL MAT_RARE MAT_PK MAT_I; do declare -n tb=$a; eq "$a has an entry per material" "${#tb[@]}" "$NMAT"; unset -n tb; done
 for k in $M60 $(( M60 + 1 )); do mat_prof "$k"; eq "${MAT_NAME[k]} is mined" "$MP_K" 1; done
 for k in $(( M60 + 2 )) $(( M60 + 3 )); do mat_prof "$k"; eq "${MAT_NAME[k]} is picked" "$MP_K" 2; done
@@ -116,7 +116,7 @@ valid_item "C.$(( NCOL - 1 ))" && ok || fail "the last collectable is valid"
 INV=("C.$(( NCOL - 1 ))"); save_char; INV=(); load_char; eq "three-digit collectables survive save and load" "${INV[*]}" "C.$(( NCOL - 1 ))"
 
 # --- achievements of 6.0 ----------------------------------------------------------------------------------------------------------
-eq "50 achievements" "$NACH" 50
+ge "50 achievements" "$NACH" 50
 new_hero 0 30; RAREK=50; ach_check; eq "Big Game Hunter" "${ACHS:ACH60:1}" 1
 CLOG=$(printf '1%.0s' $(seq 100)); ach_check; eq "Hoarder" "${ACHS:$(( ACH60 + 2 )):1}" 1
 DCLR=250; ach_check; eq "Dungeon Lord" "${ACHS:$(( ACH60 + 4 )):1}" 1

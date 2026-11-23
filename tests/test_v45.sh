@@ -10,7 +10,7 @@ ge "54 materials or more" "$NMAT" 54
 for k in 0 1 2 3; do n=0; for i in ${MAT_GRP[k]}; do (( MAT_PK[i] == k )) || fail "material $i in group $k"; n=$(( n + 1 )); done; ge "group $k has materials" "$n" 6; done
 n=0; for i in ${MAT_GRP[3]}; do gem_kq "$i" || fail "$i is no gem"; n=$(( n + 1 )); done; eq "24 gems" "$n" 24
 for g in 0 1 2 3 4 5; do for q in 1 2 3 4; do gem_mat "$g" "$q"; gem_kq "$GM"; [[ "$GKI.$GQI" == "$g.$q" ]] || fail "gem $g.$q -> $GM -> $GKI.$GQI"; done; done; ok
-PROF_LV=(29 29 29) PROF_XP=(0 0 0); for i in $(seq 400); do prof_gain 1 500 >/dev/null; done; eq "mining goes to 40" "${PROF_LV[1]}" 40
+PROF_LV=(29 29 29) PROF_XP=(0 0 0); for i in $(seq 400); do prof_gain 1 500 >/dev/null; done; eq "mining goes to the cap ($PROF_MAX since 8.0)" "${PROF_LV[1]}" "$PROF_MAX"
 for t in "${NODE_T[@]}"; do [[ -n ${NODE_MAT[$t]} && -n ${NODE_PK[$t]} ]] || fail "node $t"; done; ge "16 kinds of nodes or more" "${#NODE_T[@]}" 16
 PROF_LV=(40 40 40); m=0; CM_T=(); cm_set 960 $(( N45 + 1 )) $(( PX + 1 )) "$PY" 3 3
 GATH_MID=""; gather_start 960; GATH_END=0; MATS[M45+1]=0; gather_tick
@@ -20,7 +20,7 @@ CRAFT=forge; craft_build; t12=-1; for i in "${!RC_ID[@]}"; do [[ ${RC_ID[i]} == 
 ge "the forge makes tier 12" "$t12" 0
 MATS[M45]=50 MATS[M45+1]=50 GOLD=999999 INV=() BAGS=30; craft_do "$t12" >/dev/null
 check "a forged Godforged weapon is valid" valid_item "${INV[0]}"
-CRAFT=alch; craft_build; g=-1; for i in "${!RC_ID[@]}"; do [[ ${RC_ID[i]} == grand ]] && g=$i; done
+CRAFT=alch; craft_build; g=-1; for i in "${!RC_ID[@]}"; do [[ ${RC_ID[i]} == grand ]] && { g=$i; break; }; done   # (8.0 has a second recipe)
 MATS[M45+2]=9 MATS[M45+3]=9 EL_STR=0 EL_IRON=0 EL_SWIFT=0; craft_do "$g" >/dev/null; eq "the grand elixir" "$EL_STR$EL_IRON$EL_SWIFT" 111
 n=0; for e in ${FISHW[sea]}; do [[ ${e%%:*} == $(( M45 + 7 )) ]] && n=1; done; eq "the Starfish of Ys bites in the sea" "$n" 1
 check "perfect gems in sockets are valid" valid_item W.0.12.3.r4e4a4
@@ -29,10 +29,10 @@ gem_mat 2 3; MATS[GM]=3; GOLD=9999 JW_TAB=1; jewel_key i; gem_mat 2 4; eq "three
 eq "...an achievement" "$GEMP" 1
 
 # --- paragon --------------------------------------------------------------------------------------------
-new_hero 3 40
-para_points; eq "3 paragon points at level 40 (talents are full at 36)" "$PFREE" 3
-XP=0; gain_xp 130000 >/dev/null; eq "130k XP after 40: two paragon levels" "$PARA" 2
-para_points; eq "5 points" "$PFREE" 5
+new_hero 3 "$MAXLVL"
+para_points; eq "13 paragon points at level 50 (talents are full at 36)" "$PFREE" 13
+XP=0; gain_xp 130000 >/dev/null; eq "130k XP after 50: two paragon levels" "$PARA" 2
+para_points; eq "15 points" "$PFREE" 15
 a=$ATK; para_learn 0 >/dev/null; para_learn 0 >/dev/null; gt "Might hits harder" "$ATK" "$a"
 h=$MAXHP; para_learn 1 >/dev/null; gt "Vitality gives health" "$MAXHP" "$h"
 PARA_P="50 0 0 0 0 0"; PARA=99; if para_learn 0 2>/dev/null >/dev/null; then fail "Might stops at 50"; else ok; fi
@@ -43,7 +43,7 @@ XPNEXT=1; calc_stats; para_next "$PARA"; eq "the XP bar shows the next paragon l
 # --- mythic dungeons (server) ----------------------------------------------------------------------------
 send() { SENT+=("$*"); return 0; }; slog() { :; }
 NOW=5000000; WH_LAST=$(( NOW / 150 - 1 ))
-SP_NAME[aaaaaa]=alice SP_MAP[aaaaaa]=W SP_DEAD[aaaaaa]=0 SP_LVL[aaaaaa]=40 SP_CLS[aaaaaa]=0
+SP_NAME[aaaaaa]=alice SP_MAP[aaaaaa]=W SP_DEAD[aaaaaa]=0 SP_LVL[aaaaaa]=$MAXLVL SP_CLS[aaaaaa]=0
 SP_X[aaaaaa]=${D_ENTX[2]} SP_Y[aaaaaa]=${D_ENTY[2]}
 SENT=(); DREQ_T=(); srv_dreq aaaaaa 2 0; n=${SOLO_INST[aaaaaa]}
 for m in ${IN_MONS[$n]}; do (( MT[m] == D_BOSS[2] )) && nb=$m; done; nhp=${MMAX[nb]}
@@ -59,15 +59,15 @@ gt "this week's champion affix is everywhere" "$ch" 0
 SP_MAP[aaaaaa]=$map SP_X[aaaaaa]=$(( MX[boss] + 1 )) SP_Y[aaaaaa]=${MY[boss]}
 PLIST=(); PLIST[$map]=" aaaaaa"; SENT=(); MCH[boss]=-1; mon_attack "$boss" aaaaaa
 x=""; for s in "${SENT[@]}"; do [[ $s == "MATK srv $map $boss aaaaaa "* ]] && { x=${s#MATK srv $map $boss aaaaaa }; x=${x%% *}; }; done
-gt "mythic bosses hit like level 40" "${x:-0}" "${M_DMG[D_BOSS[2]]}"
-srv_line "SM1|POS|aaaaaa|alice|0|40|$map|${SP_X[aaaaaa]}|${SP_Y[aaaaaa]}|0|100|1|@|0"; t0=${IN_T0[$map]}
+gt "mythic bosses hit like level $MYTH_LVL" "${x:-0}" "${M_DMG[D_BOSS[2]]}"
+srv_line "SM1|POS|aaaaaa|alice|0|$MAXLVL|$map|${SP_X[aaaaaa]}|${SP_Y[aaaaaa]}|0|100|1|@|0"; t0=${IN_T0[$map]}
 eq "dying costs the group 5 seconds" "$t0" $(( NOW - 5000 ))
 SP_DEAD[aaaaaa]=0
 IN_T0[$map]=$(( NOW - IN_LIM[map] / 3 )); SENT=(); MHP[boss]=1; srv_hit aaaaaa "$map" "$boss" 500 0
 md=""; for s in "${SENT[@]}"; do [[ $s == "MDONE srv aaaaaa 10 "* ]] && md=$s; done
 [[ $md == "MDONE srv aaaaaa 10 2 "* ]] && ok || fail "a fast clear raises the key by 2: $md"
-n=0; for s in "${SENT[@]}"; do [[ $s =~ ^LOOT\ srv\ aaaaaa\ i:([WAOHJ]\.[0-9]+\.12\.[23]\..+)$ ]] && valid_item "${BASH_REMATCH[1]}" && n=1; done
-eq "the mythic boss pays epic+ tier 12 gear" "$n" 1
+n=0; for s in "${SENT[@]}"; do [[ $s =~ ^LOOT\ srv\ aaaaaa\ i:([WAOHJ]\.[0-9]+\.15\.[23]\..+)$ ]] && valid_item "${BASH_REMATCH[1]}" && n=1; done
+eq "the mythic boss pays epic+ tier 15 gear" "$n" 1
 KEYLV=10 MYBEST=0 VALOR=0; myth_done 10 2 200 80 >/dev/null; eq "client: the key rises" "$KEYLV/$MYBEST" 12/10
 myth_done 12 0 900 40 >/dev/null; eq "client: too slow, the key stays" "$KEYLV/$MYBEST" 12/10
 ge "client: valor" "$VALOR" 120
@@ -109,10 +109,10 @@ VALOR=0 INVK=0; cli_srv EVREW "$MY_ID" 25 1000 500; eq "client: valor for the de
 INV_TOWN=-1; inv_start; INV_END=$NOW; SENT=(); inv_second; eq "too slow: the town falls" "$INV_TOWN" -1
 
 # --- valor, mounts --------------------------------------------------------------------------------------------
-new_hero 1 40; INV=() BAGS=30 VALOR=99999
+new_hero 1 "$MAXLVL"; INV=() BAGS=30 VALOR=99999
 for i in 0 1 2 3 4 5 6; do valor_buy "$i" >/dev/null; done
-bad=0; for c in "${INV[@]}"; do valid_item "${c%!}" || bad=1; [[ $c =~ \.12\. ]] || bad=1; done
-eq "valor buys Godforged gear" "${#INV[@]}/$bad" 6/0
+bad=0; for c in "${INV[@]}"; do valid_item "${c%!}" || bad=1; [[ $c =~ \.15\. ]] || bad=1; done
+eq "valor buys Ascendant gear" "${#INV[@]}/$bad" 6/0
 valor_buy 7 >/dev/null; check "valor buys the Storm Gryphon" mount_has 4
 MOUNTS=00000000 GOLD=100; mount_buy 0 >/dev/null; if mount_has 0; then fail "a horse costs 1500"; else ok; fi
 GOLD=99999; mount_buy 0 >/dev/null; check "Hilda sells a horse" mount_has 0
@@ -148,7 +148,7 @@ save_char; ACHS="" TITLE=-1; load_char; eq "achievements survive save and load" 
 # --- LOOT i: and the mythic gate ---------------------------------------------------------------------------------
 INV=() BAGS=10; cli_srv LOOT "$MY_ID" "i:W.3.12.3.______"; eq "a reward item arrives" "${INV[0]}" W.3.12.3.______
 cli_srv LOOT "$MY_ID" 'i:W.3.$(id)'; cli_srv LOOT "$MY_ID" "i:U.99"; eq "...garbage does not" "${#INV[@]}" 1
-UI=""; CUR_MAP=W PX=${D_ENTX[5]} PY=${D_ENTY[5]}; dungeon_enter; eq "at level 40 the gate asks first" "$UI" dgate
+LVL=$MAXLVL; UI=""; CUR_MAP=W PX=${D_ENTX[5]} PY=${D_ENTY[5]}; dungeon_enter; eq "at the level cap the gate asks first" "$UI" dgate
 SENT=(); dreq_until=0; DG_K=5 KEYLV=5; dgate_key 2; eq "...and sends the key level" "${SENT[*]}" "DREQ $MY_ID 5 5"
 
 t_end

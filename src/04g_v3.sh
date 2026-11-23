@@ -494,7 +494,8 @@ wares_build() {  # npc type -> WR_* (what the faction sells), WR_F
   WR_NAME+=("Gem pouch (2 gems for your level)") WR_RANK+=(1) WR_PRICE+=($(( 300 + 40 * LVL ))) WR_CODE+=(gems)
   WR_NAME+=("${FAC_NAME[f]} armor (epic, 2 sockets)") WR_RANK+=(2) WR_PRICE+=($(( 2000 + 160 * LVL ))) WR_CODE+=(A)
   WR_NAME+=("${FAC_NAME[f]} weapon (epic, 1 socket)") WR_RANK+=(2) WR_PRICE+=($(( 2400 + 180 * LVL ))) WR_CODE+=(W)
-  WR_NAME+=("${U_NAME[FAC_UQ0 + f]} (unique)") WR_RANK+=(3) WR_PRICE+=(12000) WR_CODE+=("U.$(( FAC_UQ0 + f ))")
+  local u=${FAC_UQX[$f]:-$(( FAC_UQ0 + f ))}                    # v8.0: the Horizon Watch has a unique of its own
+  WR_NAME+=("${U_NAME[u]} (unique)") WR_RANK+=(3) WR_PRICE+=(12000) WR_CODE+=("U.$u")
   WR_NAME+=("Champion's weapon (legendary, 3 sockets)") WR_RANK+=(4) WR_PRICE+=(25000) WR_CODE+=(LW)
 }
 wares_buy() {  # index

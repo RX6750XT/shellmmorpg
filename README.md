@@ -1,9 +1,9 @@
 # shellmmorpg
 
 A real-time multiplayer RPG for the terminal, written in pure bash.
-One script, no dependencies for players: walk a 480×200 world with friends,
-fight monsters, clear dungeons, follow a 42-chapter story, trade, craft,
-level up to 40 - and rent a room at the inn to show off your trophies.
+One script, no dependencies for players: walk a 600×200 world with friends,
+fight monsters, clear dungeons, follow a 55-chapter story, trade, craft,
+level up to 50 - and rent a room at the inn to show off your trophies.
 
 ```
  shellmmorpg | Hearthmoor (safe) | 🌞 08:06 | 84,31 | 2 online | hosting :4747
@@ -38,6 +38,10 @@ computer.
 
 ## What's in it
 
+- **8.0: Beyond the Edge** - level 50, four new lands east of everything
+  (levels 40-50) with four towns and a new faction, gear tiers 13-15, five
+  dungeons and a second raid (the Sundered Sky), act III of the story, four
+  questlines, 25 uniques, five mounts, the Skyward Manor at the inn
 - **6.0: more of everything** - 44 more creatures, a rare elite for every
   land, 4 more dungeons and world bosses, 8 more questlines, 20 more uniques,
   materials for levels 20-29
@@ -46,28 +50,29 @@ computer.
   trees** - three per class, with capstones that change how you fight
 - **Elements and status effects**: every creature has a weakness and a
   resistance; monsters poison, bleed, burn, chill, stun and weaken
-- **A 480×200 world**: 22 regions from level 1 to 40, 17 towns with
-  waystones, day and night, weather per region, 20 roaming world bosses
-- **23 dungeons**, generated fresh for every visit, with elites, treasure
-  chests, bosses that summon help, and 66 unique legendaries
-- **257 kinds of foes**: champions with 10 affixes, 46 rare elites,
+- **A 600×200 world**: 26 regions from level 1 to 50, 21 towns with
+  waystones, day and night, weather per region, 24 roaming world bosses
+- **29 dungeons** (two of them raids), generated fresh for every visit, with
+  elites, treasure chests, bosses that summon help, and 91 unique legendaries
+- **Over 300 kinds of foes**: champions with 10 affixes, 54 rare elites,
   ranged casters and healers
 - **Gems and sockets**: 18 gems, a jeweler at every smith
-- **Endgame**: mythic dungeons (+2 to +20, weekly affixes, a clock), the
-  Eclipse Throne raid, town invasions, valor, dailies and weeklies, paragon
-  levels after 40, eight mounts, 32 achievements with titles
-- **The story** in two acts, 42 chapters through every town, plus **19
-  questlines** with choices, and **eight factions** to earn standing with
+- **Endgame**: mythic dungeons (+2 to +20, weekly affixes, a clock), two
+  raids (the Eclipse Throne, the Sundered Sky), town invasions, valor,
+  dailies and weeklies, paragon levels after 50, 13 mounts, 60 achievements
+  with titles
+- **The story** in three acts, 55 chapters through every town, plus **31
+  questlines** with choices, and **nine factions** to earn standing with
   (discounts, quartermasters, faction uniques)
 - **12 allies** who follow you, fight and heal; **parties** with shared quests;
   quests to slay, collect, deliver, scout, hunt bounties and carry letters
 - **Professions**: fishing, mining, herbalism; cooking, forging, alchemy
 - **Inventory** with item cards and comparisons, bags in six sizes, a bank
   vault in every town and a chest shared by all your heroes, player trading
-- **A home of your own** (5.0): rent a room at any inn - four sizes, a
+- **A home of your own** (5.0): rent a room at any inn - five sizes, a
   weekly rent - with a bed (Well Rested: more XP), a chest, displays, a
   collection book and a guestbook; friends visit while you are online
-- **134 collectables** in seven sets: boss and world boss trophies, a curio
+- **163 collectables** in seven sets: boss and world boss trophies, a curio
   for every land, finds from fishing and gathering, relics of the story,
   a hunter's trophy for every rare elite
 - **Two looks**: HD emoji graphics (2 columns per tile) or classic ASCII

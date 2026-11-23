@@ -5,7 +5,7 @@ source "$(dirname "$0")/lib.sh"
 stub_client
 
 # --- the world ------------------------------------------------------------------------------------------
-eq "the world is 480 wide" "${MAPW[W]}" 480
+eq "the world is 600 wide (8.0)" "${MAPW[W]}" 600
 eq "and 200 high" "${MAPH[W]}" 200
 for r in Duskwood Sunken_Kingdom Stormreach_Peaks Gloomcap_Hollows Dragonspine Bonefields Starfall_Crater; do
   n=0; for g in "${REGIONS[@]}"; do [[ $g == *" $r "* ]] && n=1; done; eq "region $r exists" "$n" 1
@@ -32,30 +32,31 @@ new_hero 0 10
 EXPW=""; for (( i = 0; i < 855; i++ )); do EXPW+=0; done
 EXPW="1${EXPW:1}"; EXPW="${EXPW:0:44}1${EXPW:45}"; EXPW="${EXPW:0:45}1${EXPW:46}"   # (0,0) (44,0) (0,1) of the 45x19 chunks
 init_explore
-eq "explored map grows to 60x25 chunks" "${#EXPW}" 1500
+eq "explored map grows to 75x25 chunks" "${#EXPW}" $(( NCHX * NCHY ))
 eq "the north-west corner stays explored" "${EXPW:0:1}" 1
 eq "the old east edge stays explored" "${EXPW:44:1}" 1
-eq "...and the second row" "${EXPW:60:1}" 1
+eq "...and the second row" "${EXPW:NCHX:1}" 1
 eq "nothing new is explored" "${EXPW//0/}" 111
 REP=(10 20 30 40 50 60); save_char; REP=(); load_char
-eq "a 3.0 save loads with eight factions" "${REP[*]}" "10 20 30 40 50 60 0 0"
+eq "a 3.0 save loads with nine factions" "${REP[*]}" "10 20 30 40 50 60 0 0 0"
 REP=(-50 0 0 0 0 0 7 007); save_char; REP=(); load_char; eq "negative and padded reputation" "${REP[0]} ${REP[7]}" "-50 7"
 
 # --- levels and tiers ---------------------------------------------------------------------------------------
-for p in 1:1 23:8 24:9 29:9 30:10 33:10 34:11 37:11 38:12 40:12 50:12; do tier_for "${p%%:*}"; eq "tier at level ${p%%:*}" "$TF" "${p#*:}"; done
+for p in 1:1 23:8 24:9 29:9 30:10 33:10 34:11 37:11 38:12 40:12 41:12 42:13 46:14 50:15 60:15; do tier_for "${p%%:*}"; eq "tier at level ${p%%:*}" "$TF" "${p#*:}"; done
 check "tier 12 gear is valid" valid_item W.0.12.3
 check "socketed tier 11 gear is valid" valid_item A.3.11.2.r3__
-if valid_item W.0.13.0; then fail "tier 13 does not exist"; else ok; fi
-new_hero 0 39; XP=0; gain_xp 99999999; eq "the cap is level 40" "$LVL" 40
+check "tier 15 gear is valid (8.0)" valid_item W.0.15.3
+if valid_item W.0.16.0; then fail "tier 16 does not exist"; else ok; fi
+new_hero 0 49; XP=0; gain_xp 99999999; eq "the cap is level 50 (8.0)" "$LVL" 50
 TAL=533153315331; tal_points; eq "36 talent points fill every tree" "$TFREE" 0
-TAL=000000000000; tal_points; eq "39 points at level 40, but only 36 to spend" "$TFREE" 36
+TAL=000000000000; tal_points; eq "49 points at level 50, but only 36 to spend" "$TFREE" 36
 bad=0; for (( i = 0; i < 300; i++ )); do
   roll_item "$B_AZOTH" aaaaaa; [[ -z $ITEM || $ITEM == [HM] ]] && continue; valid_item "$ITEM" || { bad=1; fail "loot '$ITEM'"; }
 done; eq "the last boss drops valid loot" "$bad" 0
 SP_CLS[aaaaaa]=9; t=0; for (( i = 0; i < 200; i++ )); do roll_item "$SF_SERAPH" aaaaaa; [[ $ITEM =~ ^[WAOHJ]\.[0-9]+\.12\. ]] && t=1; done
 eq "level 40 creatures drop tier 12" "$t" 1
-TALK_T=$(( NPC4 + 1 )); SHOP=smith; shop_build smith; n=0; for c in "${SH_ID[@]}"; do [[ $c =~ ^[WA]\.[0-9]+\.1[0-2]\. ]] && n=1; done
-eq "smiths sell tier 10+ at level 40" "$n" 1
+TALK_T=$(( NPC4 + 1 )); SHOP=smith; shop_build smith; n=0; for c in "${SH_ID[@]}"; do [[ $c =~ ^[WA]\.[0-9]+\.1[0-5]\. ]] && n=1; done
+eq "smiths sell tier 10+ at level 50" "$n" 1
 for (( u = 26; u < NUQ; u++ )); do check "unique $u (${U_NAME[u]}) is valid" valid_item "U.$u"; done
 n=0; for d in "${U_DROP[@]}"; do [[ $d == "$B_AZOTH:"* ]] && n=1; done; eq "Azoth carries a unique" "$n" 1
 

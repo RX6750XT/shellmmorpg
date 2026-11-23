@@ -66,7 +66,7 @@ ok
 # --- uniques and their drop table --------------------------------------------------------
 for (( u = 0; u < NUQ; u++ )); do
   [[ ${U_SLOT[u]} == [WAOHJ] ]] || fail "unique $u slot '${U_SLOT[u]}'"
-  [[ ${U_TIER[u]} =~ ^([1-9]|1[0-2])$ ]] || fail "unique $u tier '${U_TIER[u]}'"
+  [[ ${U_TIER[u]} =~ ^([1-9]|1[0-5])$ ]] || fail "unique $u tier '${U_TIER[u]}'"
   check "unique U.$u is a valid item" valid_item "U.$u"
 done
 for d in "${U_DROP[@]}"; do
@@ -108,7 +108,7 @@ for q in "${!N_QT[@]}"; do [[ -n ${N_FULL[${N_QT[$q]}]} ]] || fail "courier targ
 ok
 
 # --- the world map ---------------------------------------------------------------------
-eq "world width" "${MAPW[W]}" 480
+eq "world width" "${MAPW[W]}" 600
 eq "world height" "${MAPH[W]}" 200
 bad=0
 for (( y = 0; y < MAPH[W]; y++ )); do

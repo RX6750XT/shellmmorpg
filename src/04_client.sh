@@ -435,6 +435,7 @@ init_explore() {
   local ow=0 oh=0                                            # the map grew: keep what was explored
   (( ${#EXPW} == 390 && NCHX * NCHY != 390 )) && ow=30 oh=13   # v2.0: 240x100 -> 360x150
   (( ${#EXPW} == 855 && NCHX * NCHY != 855 )) && ow=45 oh=19   # v4.0: 360x150 -> 480x200
+  (( ${#EXPW} == 1500 && NCHX * NCHY != 1500 )) && ow=60 oh=25  # v8.0: 480x200 -> 600x200
   if (( ow )); then
     local i j old=$EXPW; EXPW=$z
     for (( j = 0; j < oh; j++ )); do for (( i = 0; i < ow; i++ )); do
@@ -970,7 +971,7 @@ dungeon_enter() {
   for (( d = 0; d < NDT; d++ )); do
     (( PX == D_ENTX[d] && PY == D_ENTY[d] )) || continue
     if (( LVL < D_REQ[d] )); then logm "A cold voice whispers: the ${D_NAME[d]} is for level ${D_REQ[d]}+." "$K_HURT"; return; fi
-    if (( LVL >= MAXLVL || d == RAID_DT )); then [[ $UI == dgate ]] || dgate_open "$d"; return; fi   # v4.5: normal or mythic?
+    if (( LVL >= MAXLVL || ${D_RAID[$d]:-0} )); then [[ $UI == dgate ]] || dgate_open "$d"; return; fi   # v4.5: normal or mythic?
     (( NOW < dreq_until )) && return
     dreq_until=$(( NOW + 4000 ))
     send DREQ "$MY_ID" "$d"
@@ -1479,7 +1480,7 @@ cli_srv() {  # typ fields...
       clear_until=$(( NOW + 10000 ))
       for x in "${!QUESTS[@]}"; do [[ ${QUESTS[x]} == "D.$CUR_DT."* ]] && quest_done "$x" && break; done
       qev_dungeon "$CUR_DT"
-      story_event D "$CUR_DT" ;;
+      story_event D "$CUR_DT"; v80_dclear "$CUR_DT" ;;
     DEND) [[ $a == "$CUR_MAP" ]] && leave_instance ;;
     ANN)  clean_text "$a"; logm "$CLEAN" "$K_ANN" ;;
     BOSS) [[ $a == "$CUR_MAP" ]] || return

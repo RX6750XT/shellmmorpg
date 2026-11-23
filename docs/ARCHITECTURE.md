@@ -89,6 +89,8 @@ here-document and the start code:
 | `04i_v50.sh` | v5.0 client (loaded last): save/load hooks (`v50_*`), collectables (`col_give`, `col_kill`, `col_find`, `col_story`, `col_count`), the room map (`room_build`, `room_go`, `room_overlay`, `room_use`), rent (`room_rent`, `room_pay`), displays, the guestbook, visits (`room_msg`) |
 | `01g_v60data.sh` | v6.0 data (after `01f`): 44 creatures (`m6`: like `m4`, plus element, weakness, resistance, trick, range), four dungeons, four world bosses, 22 rares, materials 54-59 and their nodes and recipes (`FORGE_X`, `ALCH_X`), two weapon kinds, eight townsfolk and their questlines, uniques 46-65, collectables (the hunter's trophies are made from `RARE_T`); runs the creature classifier - once, for everybody |
 | `04j_v60.sh` | v6.0 client (loaded last): icons of the new materials, sprites of the hunter's trophies, achievements of 6.0, `mat_uses` from the recipes |
+| `01h_v80data.sh` | v8.0 data (after `01g`, so after the classifier: `m8`/`mb8` name every creature's element themselves): `MAXLVL=50`, tiers 13-15, `base_stats` to 50, the four lands east of x 480 (creatures, rares, world bosses, towns via `n8`, regions, weather, water), the Horizon Watch (faction 8, `FAC_UQX`), five dungeons and the second raid (`D_RAID`: dungeon type -> raid number, `RAID_NAME`/`RAID_ANN`/`RAID_SHIELD`, `RAID2_UQ`), materials 60-69 and their nodes and recipes, uniques 66-90, mounts 8-12 (`MNT_KEYS`), valor wares, the Skyward Manor, four questlines, act III of the story, collectables, achievements |
+| `04m_v80.sh` | v8.0 client (loaded last): tier icons and flavor, material icons, the counters `RAID2K`/`EDGEK` (`v80_reset`, `v80_load_kv`, `v80_save` - called from the v5.0 hooks), `v80_kill` (from `dly_kill`), `v80_dclear` (from `DCLEAR`), `ach_ok80` |
 | `05f_v50ui.sh` | v5.0 screens: rooms at the inn, visiting, a display, the collection book, the guestbook |
 | `05d_v3ui.sh` | v3.0 screens: talents, jeweler, quartermaster, questline choices, the tabbed quest log, panel lines for effects and targets |
 | `05g_qol.sh` | v7.1 comfort, loaded last: special keys (`key_esc` -> `KEY`), the chat line (`chat_key`, `chat_complete`, history), `render_input` (cursor, the quit question), the log [c] (`ui_chatlog`, `cl_build`, `chatlog_key`), scrolling of tall panels (`ui_scroll`, `UI_FOCUS` keeps a cursor in view), waystones (`ui_way`, `way_key`), `bell`, `save_gfx` (graphics + bell) |
@@ -99,7 +101,7 @@ here-document and the start code:
 ## Data model
 
 **Maps** are strings, one per row: `MAPROW["W:57"]` is row 57 of the open
-world (480×200 since v4.0), `MAPROW["D12:3"]` row 3 of dungeon instance 12. One character per
+world (480×200 since v4.0, 600×200 since v8.0), `MAPROW["D12:3"]` row 3 of dungeon instance 12. One character per
 tile (legend in `build.sh`). `tile map x y` reads one (off the map = `^`);
 `p_walk` / `m_walk` / `blocks_shot` classify. Dungeons come from
 `gen_dungeon map type seed` - deterministic, so the server only sends the
@@ -259,7 +261,8 @@ Where the time goes, and the rules that keep it down:
   panel caches its gear lines (`PEQ_K`) and skips rows that are the same as
   last frame (`PRAW`); `emit` diffs everything else line by line.
 - **Server AI**: about 14 ms per 150 ms tick with eight players spread over
-  the 480×200 world (830 monsters). Who stands in a town is computed once
+  the 480×200 world (830 monsters; v8.0's 600×200 world spawns about 20%
+  more). Who stands in a town is computed once
   per tick (`PSAFE`), the distance loop in `mon_think` is inlined, idle
   monsters far from everyone sleep in the timer wheel until a player could
   possibly reach them (1.5 s at 28 tiles, up to 15 s far away).

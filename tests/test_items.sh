@@ -27,7 +27,7 @@ for (( k = 0; k < 6; k++ )); do check "bag B.$k valid" valid_item "B.$k"; item_n
 for c in W.0.1.0! U.0! B.2!; do check "locked $c valid" valid_item "${c%!}"; done
 
 # --- garbage is rejected (codes arrive over the network and from save files) -----------
-for c in "" W W.0 W.0.0.0 W.0.13.0 W.0.1.4 W.01.1.0 W.99.1.0 X.0.1.0 B.6 B.-1 U.01 "W.0.1.0 " \
+for c in "" W W.0 W.0.0.0 W.0.16.0 W.0.1.4 W.01.1.0 W.99.1.0 X.0.1.0 B.6 B.-1 U.01 "W.0.1.0 " \
          'W.0.1.$(id)' 'U.a[$(id)]' 'B.0;ls' W.0.1.0.0 W.0.1.0.x1 W.0.1.0._ W.0.1.0.r5 'W.0.1.0.r1r1r1r1' U.$NUQ; do
   if valid_item "$c"; then fail "'$c' must be invalid"; else ok; fi
 done

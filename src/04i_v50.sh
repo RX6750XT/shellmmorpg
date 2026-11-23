@@ -16,7 +16,7 @@ DOOR_NAME=("locked - nobody comes in" "party - your party may visit" "open - eve
 
 v50_reset() {  # a new hero
   ROOM_T=0 ROOM_PAID=-1 ROOM_DOOR=1 REST_UNTIL=0 REST_PCT=0 GUESTS="" CLOG="" ROOMD=() ROOMC=() ROOMM=()
-  v50_fix
+  v80_reset; v50_fix
 }
 v50_fix() {
   local i n
@@ -40,12 +40,14 @@ v50_load_kv() {  # key value: the lines load_char and v45_load_kv do not know
     ROOMC)  ROOMC=(); for x in $2; do valid_item "${x%!}" && ROOMC+=("$x"); done ;;
     ROOMM)  for x in $2; do [[ $x =~ ^[0-9]{1,6}$ ]] && (( i < NMAT )) && ROOMM[i]=$(( 10#$x )); i=$(( i + 1 )); done ;;
     GUESTS) [[ $2 =~ ^([A-Za-z0-9_-]{1,12}:[0-9]{1,6}( |$)){0,12}$ ]] && GUESTS=$2 ;;
+    *) v80_load_kv "$1" "$2" ;;                                 # v8.0
   esac
 }
 v50_save() {  # the lines save_char adds
   local k
   for k in "${V50_VARS[@]}"; do echo "$k=${!k}"; done
   echo "CLOG=$CLOG"; echo "ROOMD=${ROOMD[*]}"; echo "ROOMC=${ROOMC[*]}"; echo "ROOMM=${ROOMM[*]}"; echo "GUESTS=$GUESTS"
+  v80_save
 }
 
 # --- collectables -------------------------------------------------------------------------------------------
@@ -362,7 +364,7 @@ room_msg() {  # typ from name b c d e  (cli_line hands over RASK RHAS RREQ ROOM 
     RASK) door_lets "$from" || return
           room_shown; col_count
           send RHAS "$MY_ID" "$MY_NAME" "$from" "$ROOM_T" "$RSH" "$CLN" ;;
-    RHAS) [[ $b == "$MY_ID" ]] && [[ $c =~ ^[1-4]$ ]] && isnum "$d" && isnum "$e" || return
+    RHAS) [[ $b == "$MY_ID" ]] && [[ $c =~ ^[1-9]$ ]] && (( c <= NROOM )) && isnum "$d" && isnum "$e" || return
           (( d <= 99 && e <= NCOL )) || return
           VIS_INFO[$from]="$c $d $e"; MAP_DIRTY=1 ;;
     RREQ) [[ $b == "$MY_ID" ]] || return

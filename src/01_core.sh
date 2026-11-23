@@ -36,7 +36,7 @@
 #  This file is built from src/*.sh and world.txt by build.sh - edit those.
 # ============================================================================
 
-VERSION="7.2"
+VERSION="8.0"
 DATA_DIR="${SHELLMMO_DIR:-$HOME/.shellmmorpg}"
 SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
 # string lengths must count characters, not bytes (emoji graphics): make sure we run in a UTF-8 locale
@@ -447,8 +447,8 @@ slot_kinds() {  # slot -> KCLS (classes per kind) KCNT
 valid_item() {  # code -> 0 if it is well-formed gear (or a bag, a unique, a collectable)
   [[ $1 =~ ^B\.[0-5]$ ]] && return 0
   [[ $1 =~ ^C\.(0|[1-9][0-9]{0,2})$ ]] && { (( BASH_REMATCH[1] < NCOL )); return; }    # v5.0: collectables
-  [[ $1 =~ ^U\.(0|[1-9][0-9]?)$ ]] && { (( BASH_REMATCH[1] < NUQ )); return; }
-  [[ $1 =~ ^([WAOHJ])\.(0|[1-9][0-9]?)\.([1-9]|1[0-2])\.([0-3])(\.(__|[rseato][1-4]){1,3})?$ ]] || return 1   # v3.0: sockets, v4.0: tiers 10-12, v4.5: perfect gems
+  [[ $1 =~ ^U\.(0|[1-9][0-9]{0,2})$ ]] && { (( BASH_REMATCH[1] < NUQ )); return; }
+  [[ $1 =~ ^([WAOHJ])\.(0|[1-9][0-9]?)\.([1-9]|1[0-5])\.([0-3])(\.(__|[rseato][1-4]){1,3})?$ ]] || return 1   # v3.0: sockets, v4.0: tiers 10-12, v4.5: perfect gems, v8.0: tiers 13-15
   local k=${BASH_REMATCH[2]}
   slot_kinds "${BASH_REMATCH[1]}"; (( k < KCNT ))
 }

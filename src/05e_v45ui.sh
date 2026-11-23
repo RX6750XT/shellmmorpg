@@ -35,6 +35,11 @@ ui_dgate() {
     ui "  The Eclipse Throne is a raid - bring friends. Nyxara grows with every"  "$K_SYS"
     ui "  hero who enters. Stand out of the marked ground, kill her guards when she"  "$K_SYS"
     ui "  hides behind her shield, run when the eclipse is total." "$K_SYS"
+  elif (( ${D_RAID[$d]:-0} )); then                              # v8.0: the Sundered Sky
+    ui "  The Sundered Sky is a raid for heroes of level 50 - bring friends. Aurelion"  "$K_SYS"
+    ui "  grows with every hero who enters. Step off his solar flares, stand between"  "$K_SYS"
+    ui "  the beams when he sunders the sky, kill his wardens when the sunfire shields"  "$K_SYS"
+    ui "  him - and when he goes supernova, run as far as you can." "$K_SYS"
   else
     uix "  [2] ${K_LOOT}MYTHIC $MYT$N" "  [2] MYTHIC $MYT"
     ui "      [<] [>] key level ($DG_K of +$KEYLV)   time: $(( MYL / 60000 )) min   best: +$MYBEST" "$K_SYS"
@@ -52,7 +57,7 @@ ui_dgate() {
 dgate_key() {
   case $1 in
     1) dgate_go 0 ;;
-    2) (( DG_D != RAID_DT )) && dgate_go "$DG_K" ;;
+    2) (( ${D_RAID[$DG_D]:-0} )) || dgate_go "$DG_K" ;;
     LEFT|'<'|,|a|h) (( DG_K > 2 )) && DG_K=$(( DG_K - 1 )) ;;
     RIGHT|'>'|.|d|l) (( DG_K < KEYLV )) && DG_K=$(( DG_K + 1 )) ;;
   esac
@@ -70,15 +75,15 @@ dgate_go() {  # mythic level (0 = normal)
 ui_stable() {
   local i st col hilda=0
   [[ $STABLE_SRC == talk && ${N_ROLE[${TALK_T:-0}]:-} == stable ]] && hilda=1
-  if (( hilda )); then ui "  HILDA'S STABLE   [1-4] buy   [enter] ride the chosen one   [esc] close" "$K_LOOT$B"
-  else ui "  YOUR MOUNTS   [1-8] choose   [z] mount / dismount   [esc] close" "$K_LOOT$B"; fi
+  if (( hilda )); then ui "  ${N_FULL[$TALK_T]^^}'S STABLE   [key] buy   [enter] ride the chosen one   [esc] close" "$K_LOOT$B"
+  else ui "  YOUR MOUNTS   [1-9 a-d] choose   [z] mount / dismount   [esc] close" "$K_LOOT$B"; fi
   ui ""
   for (( i = 0; i < NMNT; i++ )); do
     if mount_has "$i"; then st="owned"; col=$K_GOOD; (( i == MNT_CUR )) && st="owned - riding this one" col=$K_LOOT
     else st=${MNT_SRC[i]}; col=$K_SYS; fi
     printf -v PF '%-15s +%3d%%  ' "${MNT_NAME[i]}" "${MNT_SPD[i]}"
-    if (( TW2 )); then uix "  [$(( i + 1 ))] ${MNT_E[i]} $col$PF$N${K_SYS}$st$N" "  [$(( i + 1 ))] xx $PF$st"
-    else uix "  [$(( i + 1 ))] $col$PF$N${K_SYS}$st$N" "  [$(( i + 1 ))] $PF$st"; fi
+    if (( TW2 )); then uix "  [${MNT_KEYS:i:1}] ${MNT_E[i]} $col$PF$N${K_SYS}$st$N" "  [${MNT_KEYS:i:1}] xx $PF$st"
+    else uix "  [${MNT_KEYS:i:1}] $col$PF$N${K_SYS}$st$N" "  [${MNT_KEYS:i:1}] $PF$st"; fi
   done
   ui ""
   ui "  On horseback you travel faster. Fighting or getting hit throws you off," "$K_SYS"
@@ -87,7 +92,7 @@ ui_stable() {
 stable_key() {
   local i
   case $1 in
-    [1-8]) i=$(( $1 - 1 ))
+    [1-9a-d]) i=${MNT_KEYS%%"$1"*}; i=${#i}; (( i < NMNT )) || return
            if [[ $STABLE_SRC == talk ]] && (( MNT_GOLD[i] > 0 )) && ! mount_has "$i"; then mount_buy "$i"
            elif mount_has "$i"; then MNT_CUR=$i; logm "You will ride the ${MNT_NAME[i]}." "$K_GOOD"
            else logm "${MNT_NAME[i]}: ${MNT_SRC[i]}." "$K_SYS"; fi ;;

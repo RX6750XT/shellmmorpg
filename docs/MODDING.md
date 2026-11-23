@@ -135,6 +135,34 @@ look (`Z2_*` in `04c_gfx.sh`, a line in `colorize2`, the background in
 `T2C`/`T2V`, the moonlit sketch in `dark_glyphs`, the grey world-map sketch
 in `paint`), and the legend in `build.sh` and `check_world.py`.
 
+## v8.0: Beyond the Edge (`src/01h_v80data.sh`)
+
+The newest content module, and the easiest place to add more. It runs
+**after** the classifier (01g), so:
+
+- **A creature**: `m8 VAR "Name" glyph color level hp% dmg% aggro move atk
+  emoji el weak resist ability range [healer]` sets its element itself.
+  Bosses, elites and world bosses: `mb8` (like `m4` with a boss column,
+  plus the element columns). Then `WORLD_TYPES`, a `ZONES` line, a
+  `QI_NAME`. A rare (`add_rares`) has to copy its base's element - see the
+  loop after `add_rares` there.
+- **Levels above 50**: raise `MAXLVL`, append to `_SL/_SH/_SD/_SX/_SG`
+  (`base_stats`), and for gear `MAXTIER`, `TIER_Q`, `MAT_E`, `TIER_FL` and
+  the tier range in `valid_item` (`1[0-5]`).
+- **A town**: `T8_NAME/T8_X/T8_Y` and `n8 town slot role ...` (slots
+  `T8_DX/T8_DY`, 0 = the town's questgiver), then `SAFE_RECTS`, `REGIONS`,
+  `WAYSTONES`, `TOWN_FAC` (the loop after the townsfolk).
+- **A raid**: a boss with `M_RAID[boss]=<n>`, the dungeon in `D_RAID`, its
+  name and lines in `RAID_NAME`/`RAID_ANN`/`RAID_SHIELD`, its uniques for
+  `raid_finish` (`src/03b_server45.sh`); `M_RAID` 2 uses `raid2_attack`,
+  anything else Nyxara's `raid_attack`.
+- **A faction**: `FAC_NAME FAC_E FAC_COL`, and its quartermaster unique in
+  `FAC_UQX[faction]` (the old ones are `FAC_UQ0 + faction`).
+- **A mount**: as in 4.5, plus a key in `MNT_KEYS` (13 now: `1`-`9`, `a`-`d`).
+- **A room**: `ROOM_*` and a `ROOM_LAY` line; the inn takes `[2]`-`[9]`.
+- **The map**: `tools/worldgen/extend8.py` paints x 480-599 onto
+  `world_v40.txt` (the map of 4.0-7.2). No new tiles were needed.
+
 ## v6.0: more of everything (`src/01g_v60data.sh`)
 
 The easiest place for new content now. Patterns:

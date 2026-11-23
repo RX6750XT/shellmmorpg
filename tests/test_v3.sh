@@ -102,6 +102,7 @@ REP=(0 0 0 0 0 0); QUESTS=(K.29.1.0.10.10); reward 1 0 "" 29; gt "a desert quest
 # --- every questline, start to finish ------------------------------------------------------------------
 new_hero 3 30; init_where; REP=(0 0 0 0 0 0); QLS=""; QLP=(); QLC=""; ql_fix; INV=() BAGS=40
 for (( l = 0; l < NQL; l++ )); do
+  (( LVL < QL_LVL[l] )) && LVL=${QL_LVL[l]}                  # (8.0: questlines up to level 48)
   TALK_T=${QL_NPC[l]}; UI=talk; ql_key
   eq "${QL_NAME[l]} starts" "${QLS:l:1}" 1
   for (( s = 0; s < QL_N[l]; s++ )); do

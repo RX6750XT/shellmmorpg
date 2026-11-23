@@ -8,6 +8,7 @@
 #  ./shellmmorpg.sh --port PORT         port to host on, on 127.0.0.1 (default 4747)
 #  ./shellmmorpg.sh --join [PORT]       on the server: open the game (what ssh players run)
 #  ./shellmmorpg.sh --name NAME         character name (default: $USER)
+#  ./shellmmorpg.sh --join --ask-name   the game asks for the hero's name (the open ssh account)
 #  ./shellmmorpg.sh --admin add|remove|list [NAME]   who is admin on this server
 #  ./shellmmorpg.sh --ascii / --hd      classic ASCII or HD emoji graphics ([v] in game)
 #  ./shellmmorpg.sh --help              this help
@@ -35,7 +36,7 @@
 #  This file is built from src/*.sh and world.txt by build.sh - edit those.
 # ============================================================================
 
-VERSION="7.1"
+VERSION="7.2"
 DATA_DIR="${SHELLMMO_DIR:-$HOME/.shellmmorpg}"
 SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
 # string lengths must count characters, not bytes (emoji graphics): make sure we run in a UTF-8 locale
@@ -76,6 +77,7 @@ while (( $# )); do
       [[ $2 == *:* ]] && ssh_port=(-p "${2##*:}")
       MODE=ssh; shift ;;
     --name) [[ -n $2 ]] || die "--name needs a value"; MY_NAME=$2 NAME_SET=1; shift ;;
+    --ask-name) ASK_NAME=1 ;;                      # v7.2: the game asks for the hero's name (the shared, open ssh account)
     --admin) MODE=admin ADM_OP=$2 ADM_ARG=""; [[ -n $2 ]] && shift
              if [[ $ADM_OP == @(add|remove) ]]; then ADM_ARG=$2; [[ -n $2 ]] && shift; fi ;;
     --ascii) GFX=ascii ;;
@@ -91,8 +93,9 @@ if [[ $MODE == ssh ]]; then                      # (after all options, so --name
 fi
 [[ $NET_HOST =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid host '$NET_HOST'"
 (( NET_PORT >= 1 && NET_PORT <= 65535 )) || die "invalid port '$NET_PORT'"
+[[ $MODE == session && $SHELLMMO_ASK_NAME == 1 ]] && { ASK_NAME=1 MY_NAME=${SHELLMMO_NAME:-}; }   # (set by the gate)
 MY_NAME=${MY_NAME//[^A-Za-z0-9_-]/}; MY_NAME=${MY_NAME:0:12}
-[[ -n $MY_NAME ]] || MY_NAME="hero$(( RANDOM % 1000 ))"
+[[ -n $MY_NAME || -n $ASK_NAME ]] || MY_NAME="hero$(( RANDOM % 1000 ))"
 HUB_PORT=${SHELLMMO_HUB_PORT:-$(( NET_PORT + 1 ))}       # v7.0: the hub listens on 127.0.0.1 only, next to the public port
 [[ $HUB_PORT =~ ^[1-9][0-9]{0,4}$ ]] && (( HUB_PORT <= 65535 )) || die "invalid SHELLMMO_HUB_PORT"
 
@@ -104,7 +107,9 @@ term_main() {  # connect to the gate, then only send keys and show what comes ba
   [[ -t 0 && -t 1 ]] || die "--join needs a terminal"
   { exec 3<>"/dev/tcp/127.0.0.1/$NET_PORT"; } 2>/dev/null || die "no world on port $NET_PORT on this machine - is the server running?"
   term_size
-  printf 'SMT1|%s|%s|%s|%s\n' "$MY_NAME" "$TCOLS" "$TROWS" "${GFX:--}" >&3
+  local hn=$MY_NAME
+  [[ -n $ASK_NAME ]] && { hn="?"; [[ -n $NAME_SET ]] && hn+=$MY_NAME; }   # v7.2: "?" = the game asks who you are
+  printf 'SMT1|%s|%s|%s|%s\n' "$hn" "$TCOLS" "$TROWS" "${GFX:--}" >&3
   IFS= read -r -t 10 -u 3 line || die "$NET_HOST:$NET_PORT does not answer like a shellmmorpg 7 server"
   line=${line%$'\r'}
   [[ $line == SMT1\|NO\|* ]] && die "${line#SMT1|NO|}"
@@ -2802,14 +2807,16 @@ async def gate(reader, writer):
             hs = await asyncio.wait_for(reader.readline(), 15)
         except Exception:
             return
-        m = re.fullmatch(rb"SMT1\|([A-Za-z0-9_-]{1,12})\|(\d{1,3})\|(\d{1,3})\|(hd|ascii|-)\r?\n", hs)
+        m = re.fullmatch(rb"SMT1\|(\?[A-Za-z0-9_-]{0,12}|[A-Za-z0-9_-]{1,12})\|(\d{1,3})\|(\d{1,3})\|(hd|ascii|-)\r?\n", hs)
         if not m:
             writer.write(b"SMT1|NO|This is a shellmmorpg 7 server - play over ssh (./shellmmorpg.sh --ssh user@host).\n"); return
         if len(sessions) >= MAXSESS:
             writer.write(b"SMT1|NO|The server is full.\n"); return
         name, rows, cols, gfx = m.group(1).decode(), int(m.group(3)), int(m.group(2)), m.group(4).decode()
         env = {k: os.environ[k] for k in ENV_KEEP if k in os.environ}
-        env.update(TERM="xterm-256color", SHELLMMO_NAME=name)
+        env.update(TERM="xterm-256color", SHELLMMO_NAME=name.lstrip("?"))
+        if name.startswith("?"):                    # v7.2: the shared ssh account - the game asks for the hero's name
+            env["SHELLMMO_ASK_NAME"] = "1"
         if gfx != "-":
             env["SHELLMMO_GFX"] = gfx
         master, slave = os.openpty()
@@ -11842,10 +11849,41 @@ acct_ask() {  # prompt -> ACC_IN (not echoed)
   IFS= read -rs ACC_IN; printf '\n' >&2
 }
 
-acct_login() {  # talks to the world server: loads the hero into CHAR_TEXT ("" = a new hero)
-  local tries=0 n total txt="" again
-  CHAR_TEXT="" ar_buf=""
+acct_ask_name() {  # v7.2 (the shared ssh account): who are you? -> MY_NAME
+  local tries=0
   while :; do
+    printf '%s' "Hero name (new name = new hero): " >&2
+    IFS= read -r ACC_IN || die "bye"
+    ACC_IN=${ACC_IN//[$'\r\t ']/}
+    if [[ $ACC_IN =~ ^[A-Za-z0-9_-]{1,12}$ ]]; then MY_NAME=$ACC_IN; acct_named; return 0; fi
+    [[ -n $ACC_IN ]] && echo "Names are 1-12 letters, digits, _ or -." >&2
+    (( ++tries < 20 )) || die "no name - bye"
+  done
+}
+
+acct_named() {  # the name is known now (v7.2: asked after start): what depends on it
+  local g
+  CHAR_FILE="$DATA_DIR/$MY_NAME.char"
+  [[ $MODE == session ]] || return 0
+  GFX_FILE="$DATA_DIR/prefs/${MY_NAME,,}.gfx"
+  [[ -f $GFX_FILE ]] || return 0
+  if [[ -z $SHELLMMO_GFX ]]; then
+    g=$(sed -n 's/^GFX=//p' "$GFX_FILE" 2>/dev/null | head -n1)
+    [[ $g == @(hd|ascii) ]] && GFX=$g GFX_NEW=0
+  fi
+  [[ $'\n'$(<"$GFX_FILE") == *$'\n'BELL=0* ]] && BELL_ON=0
+  return 0
+}
+
+acct_login() {  # talks to the world server: loads the hero into CHAR_TEXT ("" = a new hero)
+  local tries=0 n total txt="" again=0
+  CHAR_TEXT="" ar_buf=""
+  if [[ -n $ASK_NAME ]]; then
+    printf '\n  \e[1mshellmmorpg\e[0m - log in with your hero, or type a new name to create one.\n\n' >&2
+    [[ -n $MY_NAME ]] && acct_named || acct_ask_name
+  fi
+  while :; do
+    if [[ -z $MY_NAME ]]; then acct_ask_name; tries=0; fi
     if [[ -z $ACC_PASS ]]; then
       if [[ -n $SHELLMMO_PASS && $MODE != session ]]; then ACC_PASS=$SHELLMMO_PASS
       else acct_ask "Password for $MY_NAME: "; ACC_PASS=$ACC_IN; fi
@@ -11856,13 +11894,20 @@ acct_login() {  # talks to the world server: loads the hero into CHAR_TEXT ("" =
       ACC_PASS=""; continue
     fi
     for (( n = 0; n < 5; n++ )); do                 # the world server may still be starting up
+      now_ms; (( NOW - ${ACC_SENT:-0} < 800 )) && sleep 0.8     # (the server takes one try per 0.7 s)
       send ALOAD "$MY_ID" "$MY_NAME" "$ACC_PASS" || die "lost the connection"
+      now_ms; ACC_SENT=$NOW
       acct_wait 3000 && break
       (( n == 0 )) && echo "Waiting for the world server..." >&2
     done
     (( n < 5 )) || die "the world server did not answer - is it running, or older than 6.2?"
     case $AR_K in
       NONE)
+        if [[ -n $ASK_NAME ]]; then                     # (a typo must not quietly make a second hero)
+          printf '%s' "There is no hero called $MY_NAME yet. Create $MY_NAME? [y/n] " >&2
+          IFS= read -r ACC_IN || die "bye"
+          if [[ ${ACC_IN,,} != @(y|yes|j|ja) ]]; then MY_NAME="" ACC_PASS=""; continue; fi
+        fi
         if [[ -z $SHELLMMO_PASS ]]; then
           echo "New hero: $MY_NAME - this name is free." >&2
           acct_ask "Repeat the password: "
@@ -11885,6 +11930,14 @@ acct_login() {  # talks to the world server: loads the hero into CHAR_TEXT ("" =
       DENY)
         echo "Login refused: $AR_B" >&2
         if [[ $AR_A == PASS && -z $SHELLMMO_PASS ]] && (( ++tries < 3 )); then ACC_PASS=""; continue; fi
+        if [[ -n $ASK_NAME ]]; then                     # v7.2: back to "who are you?" instead of ending the session
+          if [[ $AR_A == NAME && $AR_B =~ ^That\ hero\ is\ called\ ([A-Za-z0-9_-]{1,12})\.$ ]]; then
+            MY_NAME=${BASH_REMATCH[1]}; acct_named; continue          # (sid -> Sid: same hero, same password)
+          fi
+          (( ++again < 10 )) || die "could not log in - bye"
+          [[ $AR_A == LOCK ]] && sleep 1
+          MY_NAME="" ACC_PASS=""; echo >&2; continue
+        fi
         die "could not log in as $MY_NAME" ;;
       *) die "unexpected answer from the server ($AR_K)" ;;
     esac

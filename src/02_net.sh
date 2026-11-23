@@ -214,14 +214,16 @@ async def gate(reader, writer):
             hs = await asyncio.wait_for(reader.readline(), 15)
         except Exception:
             return
-        m = re.fullmatch(rb"SMT1\|([A-Za-z0-9_-]{1,12})\|(\d{1,3})\|(\d{1,3})\|(hd|ascii|-)\r?\n", hs)
+        m = re.fullmatch(rb"SMT1\|(\?[A-Za-z0-9_-]{0,12}|[A-Za-z0-9_-]{1,12})\|(\d{1,3})\|(\d{1,3})\|(hd|ascii|-)\r?\n", hs)
         if not m:
             writer.write(b"SMT1|NO|This is a shellmmorpg 7 server - play over ssh (./shellmmorpg.sh --ssh user@host).\n"); return
         if len(sessions) >= MAXSESS:
             writer.write(b"SMT1|NO|The server is full.\n"); return
         name, rows, cols, gfx = m.group(1).decode(), int(m.group(3)), int(m.group(2)), m.group(4).decode()
         env = {k: os.environ[k] for k in ENV_KEEP if k in os.environ}
-        env.update(TERM="xterm-256color", SHELLMMO_NAME=name)
+        env.update(TERM="xterm-256color", SHELLMMO_NAME=name.lstrip("?"))
+        if name.startswith("?"):                    # v7.2: the shared ssh account - the game asks for the hero's name
+            env["SHELLMMO_ASK_NAME"] = "1"
         if gfx != "-":
             env["SHELLMMO_GFX"] = gfx
         master, slave = os.openpty()

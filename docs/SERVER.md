@@ -1,5 +1,9 @@
 # Running a server (over ssh)
 
+**In short (v7.2):** `sudo deploy/install.sh` - then everybody plays with
+`ssh play@your-host`. No ssh password; the game asks for the hero's name
+and password, and a new name makes a new hero.
+
 **Players reach the game only over ssh** (since 7.0 nothing else is
 possible): the game - the gate on port 4747, the hub on 4748 - listens on
 `127.0.0.1` only. Players log into the machine with ssh, `shellmmorpg-play`
@@ -25,8 +29,53 @@ Without systemd: `sudo -u shellmmo /opt/shellmmorpg/shellmmorpg.sh --server 4747
 
 Back up `/var/lib/shellmmorpg/chars/` - that is all the state there is.
 
-Give every player an ssh account (any normal unix user). To make that
-account game-only, put this in `sshd_config`:
+### The open account (v7.2)
+
+`install.sh` also creates the open ssh account `play` (`--guest NAME` for
+another name, `--no-guest` for none): a system user with an **empty
+password** whose login shell, `/usr/local/bin/shellmmorpg-guest`, can only
+start the game (`shellmmorpg.sh --join PORT --ask-name`). The sshd rules go
+to `/etc/ssh/sshd_config.d/shellmmorpg.conf` (checked with `sshd -t`, then
+sshd is reloaded; without a `sshd_config.d` include the script prints them
+for the end of `sshd_config`):
+
+```
+Match User play
+    PermitEmptyPasswords yes
+    PasswordAuthentication yes
+    KbdInteractiveAuthentication yes
+    AuthenticationMethods any
+    ForceCommand /usr/local/bin/shellmmorpg-guest
+    PermitTTY yes
+    DisableForwarding yes
+    PermitTunnel no
+    PermitUserRC no
+    MaxSessions 1
+```
+
+They only apply to `play` - your other ssh settings (e.g. keys only) stay
+as they are. The empty password needs PAM to allow it (`nullok` on
+`pam_unix`, the default on Debian, Ubuntu, Arch and Fedora); the script
+warns if it finds none.
+
+What a player sees:
+
+- **sid has played before:** `ssh play@host` -> `Hero name: sid` ->
+  `Password for sid:` -> in the world.
+- **ron is new:** `ssh play@host` -> `Hero name: ron` -> a password ->
+  `There is no hero called ron yet. Create ron? [y/n]` -> `y` -> the
+  password again -> class and look -> in the world.
+
+The heroes' passwords protect them (5 wrong ones lock a hero for a minute);
+everybody who can reach your sshd can make heroes, at most 32 play at a
+time (`SHELLMMO_MAX_PLAYERS`). `./shellmmorpg.sh --ssh play@host [--name sid]`
+works too (only `--hd`, `--ascii` and `--name` are passed on).
+
+### Players with a login of their own
+
+You can also give a player an ssh account of their own (any normal unix
+user): `ssh -t user@host shellmmorpg-play`, their hero is named after the
+unix user. To make that account game-only, put this in `sshd_config`:
 
 ```
 Match Group shellmmo-players
@@ -56,6 +105,7 @@ lines `admin NAME: ...`). When a player hosts a world with plain
 ## Play
 
 ```bash
+ssh play@host                                   # the open account: the game asks for name and password
 ssh -t user@host shellmmorpg-play
 ./shellmmorpg.sh --ssh user@host[:sshport]      # same thing, passes --ascii/--hd and --name along
 ```

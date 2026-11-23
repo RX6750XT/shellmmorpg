@@ -18,6 +18,7 @@ level up to 40 - and rent a room at the inn to show off your trophies.
 
 ```bash
 ./shellmmorpg.sh                      # start a world and play - friends come in over ssh
+ssh play@host                         # play on a server set up with deploy/install.sh (no ssh password)
 ./shellmmorpg.sh --ssh me@host        # play on a server (players always come in over ssh)
 ./shellmmorpg.sh --server 4747        # dedicated server, no player (docs/SERVER.md)
 ./shellmmorpg.sh --ascii              # classic ASCII graphics ([v] toggles in game)
@@ -101,7 +102,9 @@ over ssh**. Every player's game runs on the server; the game listens on
 127.0.0.1 and nothing but sshd is exposed (ssh encrypts keys, screen and
 password). The internal protocol never leaves the machine - see
 [PROTOCOL.md](docs/PROTOCOL.md#trust-model). A server: `deploy/install.sh`
-and [SERVER.md](docs/SERVER.md). Hosting with `./shellmmorpg.sh`: friends
+and [SERVER.md](docs/SERVER.md) - since 7.2 everybody plays through one open
+account, `ssh play@host`, and logs in with their hero's name and password
+(a new name makes a new hero). Hosting with `./shellmmorpg.sh`: friends
 need an ssh login on your machine and run
 `ssh -t user@your-host /path/to/shellmmorpg.sh --join 4747` (the game shows
 the exact line).

@@ -8,6 +8,7 @@
 #  ./shellmmorpg.sh --port PORT         port to host on, on 127.0.0.1 (default 4747)
 #  ./shellmmorpg.sh --join [PORT]       on the server: open the game (what ssh players run)
 #  ./shellmmorpg.sh --name NAME         character name (default: $USER)
+#  ./shellmmorpg.sh --join --ask-name   the game asks for the hero's name (the open ssh account)
 #  ./shellmmorpg.sh --admin add|remove|list [NAME]   who is admin on this server
 #  ./shellmmorpg.sh --ascii / --hd      classic ASCII or HD emoji graphics ([v] in game)
 #  ./shellmmorpg.sh --help              this help
@@ -35,7 +36,7 @@
 #  This file is built from src/*.sh and world.txt by build.sh - edit those.
 # ============================================================================
 
-VERSION="7.1"
+VERSION="7.2"
 DATA_DIR="${SHELLMMO_DIR:-$HOME/.shellmmorpg}"
 SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
 # string lengths must count characters, not bytes (emoji graphics): make sure we run in a UTF-8 locale
@@ -76,6 +77,7 @@ while (( $# )); do
       [[ $2 == *:* ]] && ssh_port=(-p "${2##*:}")
       MODE=ssh; shift ;;
     --name) [[ -n $2 ]] || die "--name needs a value"; MY_NAME=$2 NAME_SET=1; shift ;;
+    --ask-name) ASK_NAME=1 ;;                      # v7.2: the game asks for the hero's name (the shared, open ssh account)
     --admin) MODE=admin ADM_OP=$2 ADM_ARG=""; [[ -n $2 ]] && shift
              if [[ $ADM_OP == @(add|remove) ]]; then ADM_ARG=$2; [[ -n $2 ]] && shift; fi ;;
     --ascii) GFX=ascii ;;
@@ -91,8 +93,9 @@ if [[ $MODE == ssh ]]; then                      # (after all options, so --name
 fi
 [[ $NET_HOST =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid host '$NET_HOST'"
 (( NET_PORT >= 1 && NET_PORT <= 65535 )) || die "invalid port '$NET_PORT'"
+[[ $MODE == session && $SHELLMMO_ASK_NAME == 1 ]] && { ASK_NAME=1 MY_NAME=${SHELLMMO_NAME:-}; }   # (set by the gate)
 MY_NAME=${MY_NAME//[^A-Za-z0-9_-]/}; MY_NAME=${MY_NAME:0:12}
-[[ -n $MY_NAME ]] || MY_NAME="hero$(( RANDOM % 1000 ))"
+[[ -n $MY_NAME || -n $ASK_NAME ]] || MY_NAME="hero$(( RANDOM % 1000 ))"
 HUB_PORT=${SHELLMMO_HUB_PORT:-$(( NET_PORT + 1 ))}       # v7.0: the hub listens on 127.0.0.1 only, next to the public port
 [[ $HUB_PORT =~ ^[1-9][0-9]{0,4}$ ]] && (( HUB_PORT <= 65535 )) || die "invalid SHELLMMO_HUB_PORT"
 
@@ -104,7 +107,9 @@ term_main() {  # connect to the gate, then only send keys and show what comes ba
   [[ -t 0 && -t 1 ]] || die "--join needs a terminal"
   { exec 3<>"/dev/tcp/127.0.0.1/$NET_PORT"; } 2>/dev/null || die "no world on port $NET_PORT on this machine - is the server running?"
   term_size
-  printf 'SMT1|%s|%s|%s|%s\n' "$MY_NAME" "$TCOLS" "$TROWS" "${GFX:--}" >&3
+  local hn=$MY_NAME
+  [[ -n $ASK_NAME ]] && { hn="?"; [[ -n $NAME_SET ]] && hn+=$MY_NAME; }   # v7.2: "?" = the game asks who you are
+  printf 'SMT1|%s|%s|%s|%s\n' "$hn" "$TCOLS" "$TROWS" "${GFX:--}" >&3
   IFS= read -r -t 10 -u 3 line || die "$NET_HOST:$NET_PORT does not answer like a shellmmorpg 7 server"
   line=${line%$'\r'}
   [[ $line == SMT1\|NO\|* ]] && die "${line#SMT1|NO|}"

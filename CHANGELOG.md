@@ -1,5 +1,22 @@
 # Changelog
 
+## 7.2 - one open ssh account for everybody
+
+- `deploy/install.sh` sets up an open ssh account (`play`, `--guest NAME`
+  picks another name, `--no-guest` skips it): `ssh play@host` needs no ssh
+  password and opens the game, nothing else (no shell, no forwarding, no
+  scp). The game asks for the **hero's name** and password: a known hero
+  logs in, a new name asks "Create NAME? [y/n]" and goes on to the new
+  hero (password twice, class, look). Nobody needs a unix account of their
+  own any more.
+- `--ask-name` (for `--join`): the game on the server asks for the name.
+  Three wrong passwords, a "no" or a locked hero go back to the name
+  instead of ending the session; `RON` logs in as `ron`. `--name` still
+  fills in the name (`./shellmmorpg.sh --ssh play@host --name ron`).
+- The gate takes `?` / `?NAME` as the name in its handshake (= ask).
+- The client waits 0.8 s between login tries (the server takes one per
+  0.7 s, a fast retry used to be refused with "Slow down").
+
 ## 7.1 - comfort
 
 **Chat**
